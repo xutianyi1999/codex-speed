@@ -8,6 +8,16 @@ use std::{
 
 pub const HISTORY_LIMIT: usize = 100;
 
+#[derive(Deserialize)]
+struct LogRecord<'a> {
+    #[serde(borrow)]
+    timestamp: Option<&'a str>,
+    #[serde(rename = "type", default, borrow)]
+    kind: &'a str,
+    #[serde(borrow)]
+    payload: Option<&'a serde_json::value::RawValue>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Usage {
     pub output_tokens: u64,
@@ -122,7 +132,7 @@ impl Session {
     }
 
     pub fn ingest(&mut self, line: &[u8]) {
-        let record: Value = match serde_json::from_slice(line) {
+        let record: LogRecord<'_> = match serde_json::from_slice(line) {
             Ok(value) => value,
             Err(_) => {
                 self.malformed_lines += 1;
@@ -130,13 +140,53 @@ impl Session {
             }
         };
         let timestamp = record
-            .get("timestamp")
-            .and_then(Value::as_str)
+            .timestamp
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|t| t.with_timezone(&Utc));
         self.updated_at = self.updated_at.max(timestamp);
-        let p = &record["payload"];
-        match record["type"].as_str().unwrap_or_default() {
+        // Validate the envelope without allocating strings/trees for large
+        // assistant replies, prompts, tool output, or compacted transcripts.
+        if !matches!(
+            record.kind,
+            "session_meta" | "turn_context" | "token_usage_record" | "event_msg"
+        ) {
+            return;
+        }
+        if record.kind == "event_msg"
+            && let Some(raw) = record.payload
+        {
+            let event: LogRecord<'_> = match serde_json::from_str(raw.get()) {
+                Ok(value) => value,
+                Err(_) => {
+                    self.malformed_lines += 1;
+                    return;
+                }
+            };
+            if !matches!(
+                event.kind,
+                "task_started"
+                    | "turn_started"
+                    | "task_complete"
+                    | "turn_complete"
+                    | "turn_aborted"
+                    | "token_count"
+            ) {
+                return;
+            }
+        }
+        let payload: Value = match record
+            .payload
+            .map(|p| serde_json::from_str(p.get()))
+            .transpose()
+        {
+            Ok(value) => value.unwrap_or(Value::Null),
+            Err(_) => {
+                self.malformed_lines += 1;
+                return;
+            }
+        };
+        let p = &payload;
+        match record.kind {
             "session_meta" => {
                 self.id = string(p, "id");
                 self.cwd = string(p, "cwd");
@@ -350,5 +400,27 @@ mod tests {
         assert_eq!(s.latest().unwrap().average_tps(), None);
         s.ingest(b"not json");
         assert_eq!(s.malformed_lines, 1);
+    }
+
+    #[test]
+    fn skips_large_irrelevant_payloads_but_still_rejects_invalid_json() {
+        let mut s = Session::new("sample.jsonl".into());
+        for kind in ["response_item", "event_msg"] {
+            feed(
+                &mut s,
+                kind,
+                json!({"type":"agent_message", "text":"x".repeat(1_000_000)}),
+            );
+        }
+        assert!(s.turns.is_empty());
+        assert_eq!(s.malformed_lines, 0);
+        s.ingest(br#"{"type":"response_item","payload":{"text":invalid}}"#);
+        assert_eq!(s.malformed_lines, 1);
+        feed(
+            &mut s,
+            "event_msg",
+            json!({"type":"task_complete","turn_id":"t","duration_ms":1000,"time_to_first_token_ms":123}),
+        );
+        assert_eq!(s.latest().unwrap().first_output_ms, Some(123));
     }
 }

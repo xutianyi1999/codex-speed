@@ -24,7 +24,7 @@ struct Args {
     #[arg(long, env = "CODEX_HOME")]
     codex_home: Option<PathBuf>,
     /// Maximum session files to load; 0 loads all supported logs.
-    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(0..=10000))]
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(0..=10000))]
     limit: u32,
     /// Include turns finished in the last N hours; 0 includes all loaded history.
     #[arg(long, default_value_t = 24, value_parser = clap::value_parser!(u32).range(0..=8760))]
