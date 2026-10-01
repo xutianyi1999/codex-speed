@@ -1,1 +1,9 @@
 /target
+/web/node_modules
+/web/dist
+/.playwright-cli
+/web/test-results
+/web/playwright-report
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

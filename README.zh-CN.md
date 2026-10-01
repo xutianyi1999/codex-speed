@@ -2,85 +2,99 @@
 
 [English](README.md) | **简体中文**
 
-按模型汇总 Codex CLI 吞吐和首输出延迟的本地终端仪表盘。
-读取现有日志，无需修改 provider 或代理请求。
+监控 Codex 原生 OpenTelemetry metrics 的本地网页工具。前端嵌入 Rust 可执行文件，运行时不需要 Node.js、独立前端文件或远程服务器。
 
-![Codex Speed 模型指标、吞吐和延迟趋势图](docs/assets/dashboard.png)
+![白底浅色网页监控界面，使用合成预览数据](docs/assets/web-desktop.png)
 
-界面预览，使用模拟数据。
+*截图使用测试合成数据。*
 
-## 快速开始
+## 构建与启动
 
-需要 Rust 1.88+。
+构建需要 Rust 1.94+、Node.js 24+ 和 pnpm 12.8.1。
 
 ```sh
-cargo run --release
+cd web
+pnpm install --frozen-lockfile
+pnpm build
+cd ..
+cargo build --release --locked
+./target/release/codex-speed
 ```
 
-也可以安装后直接运行：
+浏览器打开 <http://127.0.0.1:4318>。同一服务通过 `/v1/metrics` 接收遥测。
+
+构建好前端后，也可以安装：
 
 ```sh
 cargo install --path . --locked
 codex-speed
 ```
 
-日常推荐 release 构建，启动更快。首次扫描选中的日志，之后只读取新增内容。状态保存在内存中，重启时重建。
+## 连接 Codex
 
-## 参数
+保持监控运行，在另一个终端启动 Codex：
 
-| 参数 | 用途 | 默认值 |
-| --- | --- | --- |
-| `--codex-home PATH` | Codex 日志目录 | `$CODEX_HOME` 或 `~/.codex` |
-| `--limit N` | 加载最近修改的 N 个受支持文件；`0` 取消文件数量限制 | `50` |
-| `--hours N` | 统计最近 N 小时；`0` 包含全部已加载历史 | `24` |
-| `--json` | 输出一次 JSON 快照 | 关闭 |
-| `--demo` | 使用模拟数据预览 | 关闭 |
+```sh
+OTEL_METRIC_EXPORT_INTERVAL=1000 codex --enable runtime_metrics \
+  -c 'otel.metrics_exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/metrics",protocol="json"}}'
+```
 
-每个文件保留最新 **100 轮**。省略文件或轮次、读取或解析出错时显示 `PARTIAL`。`loaded history` 仅包含已保留的记录；切换时间窗口不会加载更多文件。
+该命令请求运行时计时，并将原生 metrics 按约一秒的间隔导出。设置只对这次启动生效；已运行的 Codex 需要带这些设置重新启动。不修改 Codex 源码，不代理模型请求，也不需要导出日志或 traces。
 
-## 快捷键
+若希望永久启用，将以下设置合并进用户级 `~/.codex/config.toml` 的现有表，不要重复添加同名表：
 
-| 按键 | 操作 |
+```toml
+[features]
+runtime_metrics = true
+
+[otel]
+metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "json" } }
+```
+
+导出间隔仍通过环境变量 `OTEL_METRIC_EXPORT_INTERVAL` 设置，单位毫秒。`runtime_metrics` 是实验性功能；计时数据是否返回取决于 Codex 版本、传输方式和提供方。原生采集曾在 Codex CLI 0.159.3 上验证。参见[官方配置文档](https://learn.chatgpt.com/docs/config-file/config-reference)。
+
+## 指标口径
+
+| 显示项 | 原生来源或计算方式 |
 | --- | --- |
-| `↑/↓`、`j/k` | 选择模型 |
-| `1 / 2 / 3 / 4` | 1 小时 / 24 小时 / 7 天 / 已加载历史 |
-| `PgUp/PgDn`、`Home` | 滚动轮次 / 返回最新记录 |
-| `c` | 显示或隐藏图表 |
-| `r` | 刷新 |
-| `q`、`Esc`、`Ctrl+C` | 退出 |
+| 首 token 延迟 | `codex.responses_api_engine_service_ttft.duration_ms` 的样本平均值 |
+| 估算 Decode 吞吐 | `1000 × TBT 样本数 ÷ TBT 总和`，来源为 `codex.responses_api_engine_service_tbt.duration_ms` |
+| 输入、缓存输入、输出 tokens | `codex.turn.token_usage`，按 `token_type` 分别累加 |
+| TTFT P50 / P95 | 从直方图估算；所有批次均只有一个观测时，使用精确值计算最近秩分位数 |
 
-轮次列表最新在顶部。图表展示最近 30 个成功轮次，**左旧右新**；横轴为轮次顺序，不代表等间隔时间。灰线为所选窗口的 P50。终端至少 100 列、36 行时显示图表。界面时间使用本地时区，JSON 使用 UTC。
+主指标反映所选窗口内的统计，支持 15 分钟、1 小时、24 小时和 7 天。每个指标有自己的有效样本数。这些是**服务端报告的性能参考值**，不是客户端 bench。Service TBT 的内部口径涉及跨 engine calls 的聚合，所以倒数明确标为估算，不能等同于逐 token 实测吞吐。提供方返回的 IAPI、Engine 和额外耗时放在详情中。
 
-## 指标
+输入已经包含缓存输入，不能相加。Token 指标按 turn/model 报告，计时观测有自己的范围，不强行拼成逐请求记录。缺失显示 `—`，原生报告的零值保留为零。至少 20 个观测后才显示 P95。无限尾桶或不同桶边界可能使分位数无法估算。
 
-| 指标 | 含义 |
+网页随批次实时更新；服务端计时通常要等计时事件返回，token 用量通常在 turn 结束后更新，并非生成过程中的逐 token 即时速度。趋势按时间分桶，最多 61 个桶，没有观测就留空。不使用整轮 TPS、工具耗时扣减或会话日志逆推。
+
+## 数据与参数
+
+SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `codex-speed/metrics.sqlite`，Linux 通常是 `~/.local/share/codex-speed/`。重启后历史保留。只保存模型名、计时/token 聚合、时间戳和流标识哈希，不保存提示词或原始遥测包。
+
+| 参数 | 默认值 |
 | --- | --- |
-| First P50 / P95 | 日志中首输出延迟的中位数 / 第 95 百分位，可能包含推理或工具输出 |
-| Turn TPS P50 | 各轮「总输出 token ÷ 整轮耗时」的中位数 |
-| Non-R P50 | 各轮「非推理输出 token ÷ 整轮耗时」的中位数 |
-| Last TPS / First | 最新成功轮次的测量值 |
-| Input / Cached | 每轮输入 token / 缓存命中的输入 token；模型详情显示所选窗口内成功轮次的累计数量和有效样本数 |
+| `--port PORT` | `4318` |
+| `--data-dir PATH` | 系统本地数据目录 / `codex-speed` |
 
-界面中的 token 数使用十进制单位：`K` = 千、`M` = 百万、`B` = 十亿；例如 `1.19M`。显示值经过四舍五入，JSON 保留精确整数。
-
-`input_tokens` 包含 `cached_input_tokens`，二者不能相加。优先读取 `turn_token_usage` 的整轮累计值；旧日志使用会话累计 usage 的轮次差值。缺失字段显示 `—`，不当作 0；输入量不用于推算 prefill 速度。
-
-**TPS 包含工具执行和等待，不是流式生成速度。** 非推理输出也可能包含工具参数。任务复杂度和推理设置会影响模型间比较。
-
-只有成功完成的轮次参与统计。缺失测量显示 `—`（JSON 中为 `null`），各指标独立计算有效样本数。P95 使用 nearest-rank 算法，小样本时参考价值有限。`Unfinished` 仅表示未记录结束事件，不代表进程仍在运行。
-
-## 支持范围
-
-读取 `sessions/` 和 `archived_sessions/` 中来源为 `cli`、`exec` 或 `vscode` 的未压缩 JSONL。监听文件变更，每两秒轮询兜底。时间指标是否可用取决于 Codex 日志版本。
-
-暂不支持压缩归档、跨文件历史拼接、子代理汇总及服务端隐式模型路由。
+只监听 IPv4 本机回环地址。修改端口后，需要同步修改 Codex 的导出地址。支持 OTLP HTTP JSON、protobuf 和 gzip 请求。Delta 批次去重；Cumulative 首次建立基线，此后只计增量，基线持久化避免重启后重复统计。校验直方图标记、桶计数和时间范围，在采集或查询时清理过期数据。
 
 ## 开发
 
-使用 Rust、Ratatui/Crossterm、Clap、Notify/Walkdir、Serde 和 Chrono，依赖通过 `Cargo.lock` 锁定。
+后端：Axum、Tokio、SQLx/SQLite、官方 `opentelemetry-proto` 类型、`rust-embed`。
+前端：React 19.3、TypeScript 7、Vite 8、Tailwind 4、shadcn/ui（Base UI）、TanStack Query、Recharts 3。依赖由 `Cargo.lock` 和 `web/pnpm-lock.yaml` 锁定。
+
+热更新：先在 4318 端口启动 Rust 服务，再执行 `cd web && pnpm dev`。Vite 将 API 和 SSE 转发给后端。内嵌页面有改动时，需要重新构建 `web/dist` 和 Rust 程序。尚未构建前端时，Rust 构建会给出明确操作提示。
 
 ```sh
+pnpm --dir web lint
+pnpm --dir web build
 cargo fmt --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
+cargo build --locked
+pnpm --dir web exec playwright install chromium
+pnpm --dir web test
 ```
+
+Playwright 使用隔离的本地服务和数据库，验证真实 OTLP 接收链路、筛选、去重、桌面/笔记本布局和可访问性，并将预览截图写入 `docs/assets/`。
