@@ -24,7 +24,7 @@ pub fn draw(
         Constraint::Length(
             (models.len() + 3).clamp(4, if frame.area().height < 30 { 6 } else { 10 }) as u16,
         ),
-        Constraint::Length(if frame.area().width >= 125 { 1 } else { 2 }),
+        Constraint::Length(if frame.area().width >= 125 { 2 } else { 3 }),
         Constraint::Length(if charts_visible { 9 } else { 0 }),
         Constraint::Min(5),
         Constraint::Length(5),
@@ -175,6 +175,13 @@ pub fn draw(
                 seconds(model.latest_first_output_ms.map(|v| v as f64))
             )
         };
+        let summary = format!(
+            "{summary}\nInput {} · Cached {} · n Input/Cache={}/{}",
+            tokens(model.total_input_tokens),
+            tokens(model.total_cached_input_tokens),
+            model.input_token_samples,
+            model.cached_input_token_samples,
+        );
         frame.render_widget(
             Paragraph::new(summary).style(Style::default().fg(Color::Gray)),
             regions[2],
@@ -183,7 +190,7 @@ pub fn draw(
             draw_trends(frame, regions[3], model);
         }
         let rows = model.turns.iter().skip(turn_offset).map(|t| {
-            Row::new(vec![
+            let mut cells = vec![
                 t.finished_at
                     .or(t.started_at)
                     .map(|d| {
@@ -198,35 +205,76 @@ pub fn draw(
                     t.status.clone()
                 },
                 seconds(t.duration_ms.map(|v| v as f64)),
-                t.usage
-                    .as_ref()
-                    .map(|u| u.output_tokens.to_string())
-                    .unwrap_or_else(|| "—".into()),
+            ];
+            if wide {
+                cells.extend([tokens(t.input_tokens()), tokens(t.cached_input_tokens())]);
+            } else {
+                cells.push(format!(
+                    "{}/{}",
+                    tokens(t.input_tokens()),
+                    tokens(t.cached_input_tokens())
+                ));
+            }
+            cells.extend([
+                tokens(t.usage.as_ref().map(|u| u.output_tokens)),
                 seconds(t.first_output_ms.map(|v| v as f64)),
                 number(t.average_tps()),
                 number(t.visible_tps()),
-            ])
+            ]);
+            Row::new(cells)
         });
-        let widths = [
-            Constraint::Length(12),
-            Constraint::Length(11),
-            Constraint::Length(8),
-            Constraint::Length(7),
-            Constraint::Length(12),
-            Constraint::Length(8),
-            Constraint::Min(9),
-        ];
-        frame.render_widget(
-            Table::new(rows, widths)
-                .header(header([
+        let (widths, columns) = if wide {
+            (
+                vec![
+                    Constraint::Length(12),
+                    Constraint::Length(11),
+                    Constraint::Length(8),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Length(7),
+                    Constraint::Length(12),
+                    Constraint::Length(8),
+                    Constraint::Min(9),
+                ],
+                vec![
                     "Time Local",
                     "Status",
                     "Duration",
+                    "Input",
+                    "Cached",
                     "Output",
                     "First output",
                     "Turn TPS",
                     "Non-R TPS",
-                ]))
+                ],
+            )
+        } else {
+            (
+                vec![
+                    Constraint::Length(11),
+                    Constraint::Length(11),
+                    Constraint::Length(6),
+                    Constraint::Length(15),
+                    Constraint::Length(6),
+                    Constraint::Length(7),
+                    Constraint::Length(7),
+                    Constraint::Min(7),
+                ],
+                vec![
+                    "Time Local",
+                    "Status",
+                    "Dur.",
+                    "Input/Cache",
+                    "Output",
+                    "First",
+                    "TPS",
+                    "Non-R",
+                ],
+            )
+        };
+        frame.render_widget(
+            Table::new(rows, widths)
+                .header(header(columns))
                 .block(Block::bordered().title(format!(
                     " {} · recent turns · row {}/{} · PgUp/PgDn scroll ",
                     model.model,
@@ -399,7 +447,7 @@ fn draw_trends(frame: &mut Frame, area: ratatui::layout::Rect, model: &ModelStat
     }
 }
 
-fn header<const N: usize>(values: [&str; N]) -> Row<'_> {
+fn header<'a>(values: impl IntoIterator<Item = &'a str>) -> Row<'a> {
     Row::new(values.into_iter().map(Cell::from)).style(
         Style::default()
             .fg(Color::Cyan)
@@ -409,6 +457,27 @@ fn header<const N: usize>(values: [&str; N]) -> Row<'_> {
 fn seconds(ms: Option<f64>) -> String {
     ms.map(|v| format!("{:.2}s", v / 1000.0))
         .unwrap_or_else(|| "—".into())
+}
+fn tokens(value: Option<u64>) -> String {
+    let Some(value) = value else {
+        return "—".into();
+    };
+    if value < 1_000 {
+        return value.to_string();
+    }
+    // Decimal token units; rounding near a boundary promotes to the next unit.
+    let units = ["", "K", "M", "B", "T", "P", "E"];
+    let mut scaled = value as f64;
+    let mut unit = 0;
+    while scaled >= 999.95 && unit + 1 < units.len() {
+        scaled /= 1_000.0;
+        unit += 1;
+    }
+    if scaled < 10.0 {
+        format!("{scaled:.2}{}", units[unit])
+    } else {
+        format!("{scaled:.1}{}", units[unit])
+    }
 }
 fn number(value: Option<f64>) -> String {
     value
@@ -440,6 +509,9 @@ mod tests {
         assert!(content.contains("demo-model-a"));
         assert!(content.contains("First P95"));
         assert!(content.contains("38.6"));
+        assert!(content.contains("Input/Cache"));
+        assert!(content.contains("12.0K/9.00K"));
+        assert!(content.contains("Input 12.0K · Cached 9.00K"));
         assert!(content.contains("First includes reasoning/tools"));
         assert!(!content.contains("my-project"));
     }
@@ -464,6 +536,9 @@ mod tests {
             assert!(content.contains("last 7d"));
             assert!(content.contains("Last First"));
             assert!(content.contains("Samples "));
+            assert!(content.contains("Input 12.0K · Cached 9.00K"));
+            assert!(content.contains("Input"));
+            assert!(content.contains("Cached"));
             assert!(!content.contains("Model details"));
             assert!(content.contains("Unfinished"));
             assert_eq!(content.contains("First output (s)"), visible);

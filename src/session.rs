@@ -20,6 +20,10 @@ struct LogRecord<'a> {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Usage {
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub cached_input_tokens: Option<u64>,
     pub output_tokens: u64,
     #[serde(default)]
     pub reasoning_output_tokens: Option<u64>,
@@ -28,6 +32,8 @@ pub struct Usage {
 impl Default for Usage {
     fn default() -> Self {
         Self {
+            input_tokens: Some(0),
+            cached_input_tokens: Some(0),
             output_tokens: 0,
             reasoning_output_tokens: Some(0),
         }
@@ -53,6 +59,17 @@ pub struct Turn {
 }
 
 impl Turn {
+    pub fn input_tokens(&self) -> Option<u64> {
+        self.usage.as_ref()?.input_tokens
+    }
+    pub fn cached_input_tokens(&self) -> Option<u64> {
+        let usage = self.usage.as_ref()?;
+        let cached = usage.cached_input_tokens?;
+        if usage.input_tokens.is_some_and(|input| cached > input) {
+            return None;
+        }
+        Some(cached)
+    }
     pub fn average_tps(&self) -> Option<f64> {
         let ms = self.duration_ms.filter(|ms| *ms > 0)?;
         Some(self.usage.as_ref()?.output_tokens as f64 * 1000.0 / ms as f64)
@@ -279,6 +296,14 @@ impl Session {
                 {
                     if total.output_tokens >= turn.legacy_baseline.output_tokens {
                         turn.usage = Some(Usage {
+                            input_tokens: total
+                                .input_tokens
+                                .zip(turn.legacy_baseline.input_tokens)
+                                .and_then(|(total, baseline)| total.checked_sub(baseline)),
+                            cached_input_tokens: total
+                                .cached_input_tokens
+                                .zip(turn.legacy_baseline.cached_input_tokens)
+                                .and_then(|(total, baseline)| total.checked_sub(baseline)),
                             output_tokens: total.output_tokens - turn.legacy_baseline.output_tokens,
                             reasoning_output_tokens: total
                                 .reasoning_output_tokens
@@ -382,6 +407,87 @@ mod tests {
         );
         assert_eq!(s.latest().unwrap().average_tps(), Some(100.0));
         assert_eq!(s.latest().unwrap().visible_tps(), None);
+    }
+
+    #[test]
+    fn exact_input_usage_is_a_turn_snapshot_not_a_sum_of_snapshots() {
+        let mut s = Session::new("sample.jsonl".into());
+        feed(&mut s, "session_meta", json!({"id":"s","source":"cli"}));
+        for (response, input, cached) in [("r1", 100, 40), ("r2", 300, 150), ("r2", 300, 150)] {
+            feed(
+                &mut s,
+                "token_usage_record",
+                json!({
+                    "thread_id":"s","turn_id":"t","response_id":response,
+                    "turn_token_usage":{"input_tokens":input,"cached_input_tokens":cached,"output_tokens":100}
+                }),
+            );
+        }
+        assert_eq!(s.latest().unwrap().input_tokens(), Some(300));
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), Some(150));
+    }
+
+    #[test]
+    fn legacy_input_usage_uses_baseline_differences_and_keeps_unknowns() {
+        let mut s = Session::new("old.jsonl".into());
+        feed(
+            &mut s,
+            "event_msg",
+            json!({"type":"token_count","info":{"total_token_usage":{
+            "input_tokens":1000,"cached_input_tokens":400,"output_tokens":10}}}),
+        );
+        feed(
+            &mut s,
+            "event_msg",
+            json!({"type":"turn_started","turn_id":"t"}),
+        );
+        for _ in 0..2 {
+            feed(
+                &mut s,
+                "event_msg",
+                json!({"type":"token_count","info":{"total_token_usage":{
+                "input_tokens":1300,"cached_input_tokens":550,"output_tokens":20}}}),
+            );
+        }
+        assert_eq!(s.latest().unwrap().input_tokens(), Some(300));
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), Some(150));
+        feed(
+            &mut s,
+            "event_msg",
+            json!({"type":"token_count","info":{"total_token_usage":{
+            "input_tokens":900,"output_tokens":20}}}),
+        );
+        assert_eq!(s.latest().unwrap().input_tokens(), None);
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), None);
+    }
+
+    #[test]
+    fn missing_input_fields_stay_unknown_and_invalid_cached_counts_are_not_displayed() {
+        let mut s = Session::new("sample.jsonl".into());
+        feed(
+            &mut s,
+            "token_usage_record",
+            json!({"turn_id":"t","response_id":"r1",
+            "turn_token_usage":{"output_tokens":10}}),
+        );
+        assert_eq!(s.latest().unwrap().input_tokens(), None);
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), None);
+        feed(
+            &mut s,
+            "token_usage_record",
+            json!({"turn_id":"t","response_id":"r2",
+            "turn_token_usage":{"input_tokens":10,"cached_input_tokens":11,"output_tokens":10}}),
+        );
+        assert_eq!(s.latest().unwrap().input_tokens(), Some(10));
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), None);
+        feed(
+            &mut s,
+            "token_usage_record",
+            json!({"turn_id":"t","response_id":"r3",
+            "turn_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":10}}),
+        );
+        assert_eq!(s.latest().unwrap().input_tokens(), Some(0));
+        assert_eq!(s.latest().unwrap().cached_input_tokens(), Some(0));
     }
 
     #[test]

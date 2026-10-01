@@ -17,6 +17,10 @@ pub struct ModelStats<'a> {
     pub tps_samples: usize,
     pub visible_tps_samples: usize,
     pub latency_samples: usize,
+    pub input_token_samples: usize,
+    pub cached_input_token_samples: usize,
+    pub total_input_tokens: Option<u64>,
+    pub total_cached_input_tokens: Option<u64>,
     pub output_tps_p50: Option<f64>,
     pub visible_tps_p50: Option<f64>,
     pub first_output_p50_ms: Option<f64>,
@@ -65,6 +69,11 @@ pub fn summarize<'a>(
             for values in [&mut output, &mut visible, &mut latency] {
                 values.sort_by(f64::total_cmp);
             }
+            let input: Vec<_> = completed.iter().filter_map(|t| t.input_tokens()).collect();
+            let cached_input: Vec<_> = completed
+                .iter()
+                .filter_map(|t| t.cached_input_tokens())
+                .collect();
             let latest = completed.first();
             ModelStats {
                 failed: turns.iter().filter(|t| t.status == "failed").count(),
@@ -81,6 +90,10 @@ pub fn summarize<'a>(
                 tps_samples: output.len(),
                 visible_tps_samples: visible.len(),
                 latency_samples: latency.len(),
+                input_token_samples: input.len(),
+                cached_input_token_samples: cached_input.len(),
+                total_input_tokens: checked_total(&input),
+                total_cached_input_tokens: checked_total(&cached_input),
                 output_tps_p50: median(&output),
                 visible_tps_p50: median(&visible),
                 first_output_p50_ms: median(&latency),
@@ -90,6 +103,15 @@ pub fn summarize<'a>(
             }
         })
         .collect()
+}
+
+fn checked_total(values: &[u64]) -> Option<u64> {
+    if values.is_empty() {
+        return None;
+    }
+    values
+        .iter()
+        .try_fold(0u64, |sum, value| sum.checked_add(*value))
 }
 
 fn median(sorted: &[f64]) -> Option<f64> {
@@ -179,6 +201,45 @@ mod tests {
         assert_eq!(models[0].completed, 1);
         assert_eq!(models[0].latency_samples, 0);
         assert_eq!(models[0].output_tps_p50, None);
+    }
+
+    #[test]
+    fn input_totals_include_only_known_successful_samples() {
+        let mut s = Session::new("sample.jsonl".into());
+        for (id, usage, kind) in [
+            (
+                "known",
+                json!({"input_tokens":100,"cached_input_tokens":40,"output_tokens":10}),
+                "task_complete",
+            ),
+            (
+                "uncached",
+                json!({"input_tokens":200,"output_tokens":10}),
+                "task_complete",
+            ),
+            ("missing", json!({"output_tokens":10}), "task_complete"),
+            (
+                "interrupted",
+                json!({"input_tokens":999,"cached_input_tokens":999,"output_tokens":10}),
+                "turn_aborted",
+            ),
+        ] {
+            feed(&mut s, "turn_context", json!({"turn_id":id,"model":"a"}));
+            feed(
+                &mut s,
+                "token_usage_record",
+                json!({"turn_id":id,"response_id":id,"turn_token_usage":usage}),
+            );
+            feed(&mut s, "event_msg", json!({"type":kind,"turn_id":id}));
+        }
+        let stats = summarize(&[&s], None);
+        assert_eq!(stats[0].total_input_tokens, Some(300));
+        assert_eq!(stats[0].total_cached_input_tokens, Some(40));
+        assert_eq!(stats[0].input_token_samples, 2);
+        assert_eq!(stats[0].cached_input_token_samples, 1);
+        assert_eq!(checked_total(&[]), None);
+        assert_eq!(checked_total(&[0]), Some(0));
+        assert_eq!(checked_total(&[u64::MAX, 1]), None);
     }
 
     #[test]

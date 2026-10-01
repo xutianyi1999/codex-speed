@@ -213,7 +213,8 @@ impl Monitor {
                     "id": t.id, "model": t.model, "status": t.status, "started_at": t.started_at,
                     "finished_at": t.finished_at,
                     "duration_ms": t.duration_ms, "first_output_ms": t.first_output_ms,
-                    "usage": t.usage, "average_output_tps": t.average_tps(),
+                    "usage": t.usage, "input_tokens": t.input_tokens(), "cached_input_tokens": t.cached_input_tokens(),
+                    "average_output_tps": t.average_tps(),
                     "average_visible_output_tps": t.visible_tps(),
                 })).collect::<Vec<_>>()
             })).collect::<Vec<_>>()
@@ -249,7 +250,7 @@ impl Monitor {
             feed(
                 "token_usage_record",
                 json!({"thread_id":id,"turn_id":"turn-1","response_id":"response-1",
-                "turn_token_usage":{"output_tokens":702,"reasoning_output_tokens":102}}),
+                "turn_token_usage":{"input_tokens":12000,"cached_input_tokens":9000,"output_tokens":702,"reasoning_output_tokens":102}}),
             );
             feed(
                 "event_msg",

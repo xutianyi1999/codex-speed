@@ -59,6 +59,11 @@ Turn lists show newest first. Charts show the latest 30 completed turns **oldest
 | Turn TPS P50 | Median of each turn’s total output tokens ÷ whole-turn duration |
 | Non-R P50 | Median of each turn’s non-reasoning output tokens ÷ whole-turn duration |
 | Last TPS / First | Latest successfully completed turn’s measurements |
+| Input / Cached | Per-turn input tokens / cached input tokens; selected-model details show totals and valid sample counts for successful turns in the window |
+
+Token counts use decimal units in the UI: `K` = thousand, `M` = million, `B` = billion (e.g. `1.19M`). Display values are rounded; JSON retains exact integers.
+
+`input_tokens` includes `cached_input_tokens`; do not add them together. Counts use the turn usage snapshot when available, or differences of cumulative session usage for legacy logs. Missing fields remain `—`, not zero. Input counts are not used to estimate prefill speed.
 
 **TPS includes tool execution and waiting; it is not streaming generation speed.** Non-reasoning output can include tool arguments. Task complexity and reasoning settings affect comparisons.
 

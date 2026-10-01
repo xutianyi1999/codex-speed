@@ -59,6 +59,11 @@ codex-speed
 | Turn TPS P50 | 各轮「总输出 token ÷ 整轮耗时」的中位数 |
 | Non-R P50 | 各轮「非推理输出 token ÷ 整轮耗时」的中位数 |
 | Last TPS / First | 最新成功轮次的测量值 |
+| Input / Cached | 每轮输入 token / 缓存命中的输入 token；模型详情显示所选窗口内成功轮次的累计数量和有效样本数 |
+
+界面中的 token 数使用十进制单位：`K` = 千、`M` = 百万、`B` = 十亿；例如 `1.19M`。显示值经过四舍五入，JSON 保留精确整数。
+
+`input_tokens` 包含 `cached_input_tokens`，二者不能相加。优先读取 `turn_token_usage` 的整轮累计值；旧日志使用会话累计 usage 的轮次差值。缺失字段显示 `—`，不当作 0；输入量不用于推算 prefill 速度。
 
 **TPS 包含工具执行和等待，不是流式生成速度。** 非推理输出也可能包含工具参数。任务复杂度和推理设置会影响模型间比较。
 
