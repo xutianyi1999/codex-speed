@@ -11,7 +11,7 @@ import {
   TimerIcon,
   WifiOffIcon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { clock, rate, type Snapshot, seconds, tokens, useMetrics } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 
 const Trend = lazy(() => import("@/components/trend"));
 
@@ -83,6 +84,7 @@ function Hint({ children, label }: { children: React.ReactNode; label: string })
 function Setup({ endpoint, children }: { endpoint: string; children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const commandRef = useRef<HTMLElement>(null);
   const command = `OTEL_METRIC_EXPORT_INTERVAL=1000 codex --enable runtime_metrics \\\n  -c 'otel.metrics_exporter={otlp-http={endpoint="${endpoint}",protocol="json"}}'`;
   return (
     <Dialog>
@@ -99,18 +101,18 @@ function Setup({ endpoint, children }: { endpoint: string; children?: React.Reac
         </DialogHeader>
         <div className="command-block">
           <pre>
-            <code>{command}</code>
+            <code ref={commandRef}>{command}</code>
           </pre>
           <Button
             variant="secondary"
             size="sm"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(command);
-                setCopied(true);
-                setCopyError(false);
-              } catch {
-                setCopyError(true);
+            onClick={async (event) => {
+              const container = event.currentTarget.parentElement;
+              const success = container != null && (await copyText(command, container));
+              setCopied(success);
+              setCopyError(!success);
+              if (!success && commandRef.current) {
+                window.getSelection()?.selectAllChildren(commandRef.current);
               }
             }}
           >
@@ -122,7 +124,7 @@ function Setup({ endpoint, children }: { endpoint: string; children?: React.Reac
             {copied ? "已复制" : "复制命令"}
           </Button>
         </div>
-        {copyError && <p role="alert">无法访问剪贴板，请手动复制上面的命令。</p>}
+        {copyError && <p role="alert">已选中命令，请按 Ctrl+C（macOS 用 ⌘C）复制。</p>}
         <ol className="setup-steps">
           <li>先启动监控，再启动 Codex；已运行的 Codex 需要重新启动。</li>
           <li>正常提问或写代码，收到原生 metrics 后页面会自动更新。</li>

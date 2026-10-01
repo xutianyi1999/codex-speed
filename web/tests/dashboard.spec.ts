@@ -64,3 +64,24 @@ test('setup, live metrics, filters and accessible responsive layout', async ({ p
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({ path: `../docs/assets/web-${info.project.name}.png`, fullPage: true })
 })
+
+
+test('copy command works without Clipboard API and offers manual selection when blocked', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/')
+  await page.getByRole('button', { name: '连接 Codex' }).click()
+  const command = await page.locator('.command-block code').innerText()
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+  })
+  await page.getByRole('button', { name: '复制命令', exact: true }).click()
+  await expect(page.getByRole('button', { name: '已复制', exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  // Read the real clipboard using the prototype after forcing the HTTP fallback.
+  expect(await page.evaluate(() => Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')!.get!.call(navigator).readText())).toBe(command)
+  await page.evaluate(() => { document.execCommand = () => false })
+  await page.getByRole('button', { name: '已复制', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('已选中命令')
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(command)
+  await expect(page.locator('.command-block textarea')).toHaveCount(0)
+})

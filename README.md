@@ -101,9 +101,9 @@ pnpm dev
 
 Open <http://127.0.0.1:5173>. Vite provides React Fast Refresh; Watchexec recompiles and restarts Rust on changes. concurrently manages both processes: Ctrl+C stops both, and either process exiting stops the other. Rust compilation errors keep the watcher alive so fixing the source triggers another build. SSE reconnects after backend restarts.
 
-The development API listens on `0.0.0.0:4319` and Vite on `0.0.0.0:5173`. Vite proxies `/api`, SSE and `/v1/metrics`. The database lives at `target/dev-data/metrics.sqlite`, and build artifacts at `target/dev-build/`. These are separate from the default release port and data directory, so both environments can run simultaneously.
+The development API listens on `0.0.0.0:4318` and Vite on `0.0.0.0:5173`. Vite proxies `/api`, SSE and `/v1/metrics`. The database lives at `target/dev-data/metrics.sqlite`, and build artifacts at `target/dev-build/`. The database is separate from release; both backend modes use port `4318`, so they cannot bind that port simultaneously.
 
-The backend uses `--no-default-features`: API only, no embedded assets and no dependency on `web/dist`. Connect Codex to `http://127.0.0.1:4319/v1/metrics`; the dashboard connection command uses the current Vite address and forwards through its `/v1/metrics` proxy.
+The backend uses `--no-default-features`: API only, no embedded assets and no dependency on `web/dist`. Connect Codex to `http://127.0.0.1:4318/v1/metrics`; the dashboard connection command points directly to the backend on port `4318`, just as in release.
 
 ### Release: an executable with embedded frontend
 

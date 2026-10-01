@@ -214,6 +214,21 @@ async fn snapshot(
                         .and_then(|origin| origin.parse::<Uri>().ok())
                         .and_then(|uri| uri.scheme_str().map(str::to_owned))
                         .unwrap_or_else(|| "http".into());
+                    // Vite forwards its Host header in dev. Export directly to the
+                    // backend port instead of requiring the frontend proxy to run.
+                    #[cfg(not(feature = "embedded-web"))]
+                    let host = host
+                        .parse::<axum::http::uri::Authority>()
+                        .ok()
+                        .zip(
+                            state
+                                .endpoint
+                                .parse::<Uri>()
+                                .ok()
+                                .and_then(|uri| uri.port_u16()),
+                        )
+                        .map(|(authority, port)| format!("{}:{port}", authority.host()))
+                        .unwrap_or_else(|| host.to_owned());
                     format!("{scheme}://{host}/v1/metrics")
                 })
                 .unwrap_or(state.endpoint),

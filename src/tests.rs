@@ -248,6 +248,18 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
     let body = to_bytes(response.into_body(), 1000000).await.unwrap();
     let value: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(value["endpoint"], "http://192.168.1.10:4318/v1/metrics");
+    #[cfg(not(feature = "embedded-web"))]
+    {
+        let request = Request::builder()
+            .uri("/api/snapshot")
+            .header("host", "192.168.1.10:5173")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let body = to_bytes(response.into_body(), 1000000).await.unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["endpoint"], "http://192.168.1.10:4318/v1/metrics");
+    }
     let request = Request::builder()
         .uri("/")
         .header("host", "127.0.0.1:4318")

@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "playwright test",
     "dev:frontend": "vite",
-    "dev:backend": "watchexec --restart --stop-signal SIGINT --stop-timeout 5s --debounce 300ms --watch ../src --watch ../Cargo.toml --watch ../Cargo.lock --watch ../build.rs -- cargo run --manifest-path ../Cargo.toml --target-dir ../target/dev-build --no-default-features --locked -- --port 4319 --data-dir ../target/dev-data",
+    "dev:backend": "watchexec --restart --stop-signal SIGINT --stop-timeout 5s --debounce 300ms --watch ../src --watch ../Cargo.toml --watch ../Cargo.lock --watch ../build.rs -- cargo run --manifest-path ../Cargo.toml --target-dir ../target/dev-build --no-default-features --locked -- --port 4318 --data-dir ../target/dev-data",
     "build:release": "pnpm build && cargo build --manifest-path ../Cargo.toml --release --locked"
   },
   "dependencies": {

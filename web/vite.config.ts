@@ -12,11 +12,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:4319",
+        target: "http://127.0.0.1:4318",
         changeOrigin: false,
       },
       "/v1/metrics": {
-        target: "http://127.0.0.1:4319",
+        target: "http://127.0.0.1:4318",
         changeOrigin: false,
       },
     },

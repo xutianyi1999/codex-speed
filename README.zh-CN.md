@@ -101,9 +101,9 @@ pnpm dev
 
 打开 <http://127.0.0.1:5173>。前端使用 Vite + React Fast Refresh；Rust 修改由 Watchexec 自动重新编译并重启。concurrently 管理两个进程，Ctrl+C 一起停止；任一进程退出也会停止另一进程。Rust 编译错误会保留文件监听，修复后再次自动编译。后端重启期间 SSE 自动重连。
 
-开发后端监听 `0.0.0.0:4319`，网页监听 `0.0.0.0:5173`，Vite 转发 `/api`、SSE 和 `/v1/metrics`。开发数据保存在 `target/dev-data/metrics.sqlite`，开发编译产物在 `target/dev-build/`。与默认 release 端口和数据目录分开，可以同时运行。
+开发后端监听 `0.0.0.0:4318`，网页监听 `0.0.0.0:5173`，Vite 转发 `/api`、SSE 和 `/v1/metrics`。开发数据保存在 `target/dev-data/metrics.sqlite`，开发编译产物在 `target/dev-build/`。数据库与 release 分开，后端端口统一为 `4318`；dev 和 release 不能同时占用这个端口。
 
-开发编译使用 `--no-default-features`，只启动 API 服务，不内嵌前端，也不依赖 `web/dist`。Codex 连接开发环境时使用 `http://127.0.0.1:4319/v1/metrics`；页面的连接命令使用当前网页地址，经 Vite 的 `/v1/metrics` 代理转发，同样能连接开发后端。
+开发编译使用 `--no-default-features`，只启动 API 服务，不内嵌前端，也不依赖 `web/dist`。Codex 连接开发环境时使用 `http://127.0.0.1:4318/v1/metrics`；页面的连接命令直接指向当前服务器的后端端口 `4318`，与 release 一致。
 
 ### Release：单文件内嵌网页
 
