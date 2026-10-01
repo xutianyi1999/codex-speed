@@ -402,7 +402,7 @@ export default function App() {
             </CardContent>
             <CardFooter>
               <span>输入 {tokens(summary?.input_tokens)}</span>
-              <span>缓存 {tokens(summary?.cached_input_tokens)}</span>
+              <span>缓存输入 {tokens(summary?.cached_input_tokens)}</span>
             </CardFooter>
           </Card>
         </section>
@@ -444,6 +444,22 @@ export default function App() {
               )}
             </div>
           </div>
+        </section>
+        <section className="trend-section" aria-label="Token 用量趋势">
+          <div className="section-heading">
+            <div>
+              <h2>Token 用量趋势</h2>
+              <p>每个时间桶内的用量合计，输入包含缓存输入；空白表示没有数据。</p>
+            </div>
+            <span className="text-xs text-muted-foreground">tokens</span>
+          </div>
+          {data ? (
+            <Suspense fallback={<div className="chart-empty" />}>
+              <Trend data={data} metric="tokens" />
+            </Suspense>
+          ) : (
+            <div className="chart-empty" />
+          )}
         </section>
         <section className="models-section">
           <div className="section-heading">

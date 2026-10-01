@@ -1,5 +1,6 @@
 import { ActivityIcon } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import TokenTrend from "@/components/token-trend";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { clock, type Snapshot } from "@/lib/api";
@@ -8,8 +9,9 @@ export default function Trend({
   metric,
 }: {
   data: Snapshot;
-  metric: "ttft_ms" | "decode_tps";
+  metric: "ttft_ms" | "decode_tps" | "tokens";
 }) {
+  if (metric === "tokens") return <TokenTrend data={data} />;
   const latency = metric === "ttft_ms";
   const values = data.trend.map((p) => ({
     ...p,

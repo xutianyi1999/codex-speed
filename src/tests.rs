@@ -160,6 +160,21 @@ async fn independent_tokens_weighted_tbt_filter_and_retention() {
     assert_eq!(snap.summary.input_tokens, Some(12000.0));
     assert_eq!(snap.summary.cached_input_tokens, Some(11000.0));
     assert_eq!(snap.summary.output_tokens, None);
+    assert_eq!(
+        snap.trend
+            .iter()
+            .filter_map(|p| p.input_tokens)
+            .sum::<f64>(),
+        12000.0
+    );
+    assert_eq!(
+        snap.trend
+            .iter()
+            .filter_map(|p| p.cached_input_tokens)
+            .sum::<f64>(),
+        11000.0
+    );
+    assert!(snap.trend.iter().all(|p| p.output_tokens.is_none()));
     let snap = store
         .snapshot(60, Some("another-model".into()), String::new(), now + 1)
         .await

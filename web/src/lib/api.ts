@@ -27,7 +27,14 @@ export interface Snapshot {
   selected_model: string | null;
   models: (Summary & { model: string })[];
   summary: Summary;
-  trend: { time_ms: number; ttft_ms: number | null; decode_tps: number | null }[];
+  trend: {
+    time_ms: number;
+    ttft_ms: number | null;
+    decode_tps: number | null;
+    input_tokens: number | null;
+    cached_input_tokens: number | null;
+    output_tokens: number | null;
+  }[];
 }
 export function useMetrics(minutes: number, model: string | null) {
   const client = useQueryClient();

@@ -165,6 +165,9 @@ pub struct TrendPoint {
     pub time_ms: i64,
     pub ttft_ms: Option<f64>,
     pub decode_tps: Option<f64>,
+    pub input_tokens: Option<f64>,
+    pub cached_input_tokens: Option<f64>,
+    pub output_tokens: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -388,6 +391,9 @@ impl Store {
                     time_ms: time,
                     ttft_ms: value.ttft.mean_ms,
                     decode_tps: value.decode_tps,
+                    input_tokens: value.input_tokens,
+                    cached_input_tokens: value.cached_input_tokens,
+                    output_tokens: value.output_tokens,
                 }
             })
             .collect();

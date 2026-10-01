@@ -26,6 +26,7 @@
   --color-ring: var(--primary);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -49,6 +50,7 @@
   --border: #e7ebf0;
   --chart-1: #5786dc;
   --chart-2: #46918b;
+  --chart-3: #926ac4;
   --surface-blue: #eef4ff;
   --surface-green: #edf6f3;
 }
@@ -221,6 +223,7 @@
   height: 14px;
 }
 .metrics-grid [data-slot="card-footer"] {
+  margin-top: auto;
   justify-content: space-between;
   padding-top: 0;
   font-size: 0.75rem;

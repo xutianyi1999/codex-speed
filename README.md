@@ -65,7 +65,7 @@ The headline numbers describe the selected window (15 minutes, 1 hour, 24 hours,
 
 Input includes cached input: do not add them together. Token metrics are reported per turn/model, while timing observations have their own scope. Timing and token counts are not paired into request records. Missing fields remain `—`; native reported zero values remain zero. P95 is withheld until there are at least 20 observations. Infinite histogram tails or incompatible bucket layouts can leave quantiles unavailable.
 
-Metrics arrive in periodic batches; server timings typically become available after a timing event, and token usage at turn completion. The dashboard does not show instantaneous per-token speed. Trends use up to 61 time buckets with gaps for missing measurements. No turn-duration, tool-time subtraction, or session-log inference is used.
+Metrics arrive in periodic batches; server timings typically become available after a timing event, and token usage at turn completion. The dashboard does not show instantaneous per-token speed. Trends use up to 61 time buckets with gaps for missing measurements. Timing charts show bucket means; the token chart shows bucket sums for input, cached input and output. Cached input is neither stacked nor added to input. No turn-duration, tool-time subtraction, or session-log inference is used.
 
 ## Storage and options
 
