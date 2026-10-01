@@ -29,7 +29,7 @@ export interface Snapshot {
   summary: Summary;
   trend: { time_ms: number; ttft_ms: number | null; decode_tps: number | null }[];
 }
-export function useMetrics(minutes: number, model: string) {
+export function useMetrics(minutes: number, model: string | null) {
   const client = useQueryClient();
   const [connected, setConnected] = useState(false);
   useEffect(() => {
@@ -45,7 +45,7 @@ export function useMetrics(minutes: number, model: string) {
     queryKey: ["metrics", minutes, model],
     queryFn: async ({ signal }): Promise<Snapshot> => {
       const params = new URLSearchParams({ minutes: String(minutes) });
-      if (model !== "all") params.set("model", model);
+      if (model != null) params.set("model", model);
       const response = await fetch(`/api/snapshot?${params}`, { signal });
       if (!response.ok) throw new Error("无法获取监控数据，请确认 codex-speed 正在运行。");
       return response.json();

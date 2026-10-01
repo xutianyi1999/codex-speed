@@ -8,7 +8,6 @@ import {
   LayersIcon,
   RadioIcon,
   Settings2Icon,
-  SparklesIcon,
   TimerIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -219,13 +218,17 @@ function Details({ data }: { data: Snapshot }) {
 }
 export default function App() {
   const [minutes, setMinutes] = useState(60);
-  const [model, setModel] = useState("all");
+  const [model, setModel] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const { data, error, connected } = useMetrics(minutes, model);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+  useEffect(() => {
+    if (model == null && data?.selected_model) setModel(data.selected_model);
+  }, [model, data?.selected_model]);
+  const selectedModel = model ?? data?.selected_model ?? null;
   const summary = data?.summary;
   const endpoint = data?.endpoint || `${window.location.origin}/v1/metrics`;
   const last = data?.last_received_ms;
@@ -237,12 +240,9 @@ export default function App() {
       : fresh
         ? "正在接收"
         : "等待新数据";
-  const modelItems = [
-    { value: "all", label: "全部模型" },
-    ...(data?.models.map((m) => ({ value: m.model, label: m.model })) || []),
-  ];
-  if (model !== "all" && !modelItems.some((item) => item.value === model))
-    modelItems.push({ value: model, label: model });
+  const modelItems = data?.models.map((m) => ({ value: m.model, label: m.model })) || [];
+  if (selectedModel != null && !modelItems.some((item) => item.value === selectedModel))
+    modelItems.push({ value: selectedModel, label: selectedModel });
   return (
     <div className="app-shell">
       <a className="skip-link" href="#content">
@@ -250,9 +250,7 @@ export default function App() {
       </a>
       <header className="app-header">
         <a href="/" className="brand">
-          <span className="brand-mark">
-            <SparklesIcon aria-hidden="true" />
-          </span>
+          <img className="brand-mark" src="/favicon.svg" alt="" width="38" height="38" />
           <span>
             Codex <strong>Speed</strong>
           </span>
@@ -289,9 +287,14 @@ export default function App() {
           <FieldGroup className="model-field">
             <Field orientation="horizontal">
               <FieldLabel htmlFor="model-select">模型</FieldLabel>
-              <Select items={modelItems} value={model} onValueChange={(v) => v && setModel(v)}>
+              <Select
+                items={modelItems}
+                value={selectedModel}
+                disabled={modelItems.length === 0}
+                onValueChange={(v) => v && setModel(v)}
+              >
                 <SelectTrigger id="model-select">
-                  <SelectValue />
+                  <SelectValue placeholder="等待模型数据" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>

@@ -6,7 +6,21 @@ import { defineConfig } from "vite"
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { proxy: { "/api": { target: "http://127.0.0.1:4318", changeOrigin: true, headers: { Origin: "http://127.0.0.1:4318" } } } },
+  server: {
+    host: "0.0.0.0",
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:4319",
+        changeOrigin: false,
+      },
+      "/v1/metrics": {
+        target: "http://127.0.0.1:4319",
+        changeOrigin: false,
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "./src"),

@@ -4,13 +4,16 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --kill-others --kill-signal SIGINT --kill-timeout 5000 --names rust,vite \"pnpm dev:backend\" \"pnpm dev:frontend\"",
     "build": "tsc -b && vite build",
     "lint": "biome check src",
     "format": "biome check --write src",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "test": "playwright test"
+    "test": "playwright test",
+    "dev:frontend": "vite",
+    "dev:backend": "watchexec --restart --stop-signal SIGINT --stop-timeout 5s --debounce 300ms --watch ../src --watch ../Cargo.toml --watch ../Cargo.lock --watch ../build.rs -- cargo run --manifest-path ../Cargo.toml --target-dir ../target/dev-build --no-default-features --locked -- --port 4319 --data-dir ../target/dev-data",
+    "build:release": "pnpm build && cargo build --manifest-path ../Cargo.toml --release --locked"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -35,6 +38,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.2"
   },

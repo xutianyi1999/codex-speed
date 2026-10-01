@@ -104,10 +104,6 @@
   background: var(--surface-blue);
   color: var(--primary);
 }
-.brand-mark svg {
-  width: 21px;
-  height: 21px;
-}
 .header-actions {
   display: flex;
   align-items: center;
