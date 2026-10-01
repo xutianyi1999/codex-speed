@@ -1,0 +1,16 @@
+{
+  "name": "codex-speed",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "dev": "pnpm --filter codex-speed-web dev",
+    "build": "pnpm --filter codex-speed-web build:release",
+    "build:frontend": "pnpm --filter codex-speed-web build",
+    "lint": "pnpm --filter codex-speed-web lint",
+    "format": "pnpm --filter codex-speed-web format",
+    "typecheck": "pnpm --filter codex-speed-web typecheck",
+    "test": "pnpm build:frontend && cargo test --locked && cargo build --locked && pnpm --filter codex-speed-web test",
+    "browsers": "pnpm --filter codex-speed-web exec playwright install chromium"
+  }
+}

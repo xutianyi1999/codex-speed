@@ -10,11 +10,11 @@
 
 ## 构建与启动
 
-构建需要 Rust 1.94+、Node.js 24+ 和 pnpm 12.8.1。
+构建需要 Rust 1.94+、Node.js 24+ 和 pnpm 12.8.1。以下命令均在项目根目录执行，pnpm workspace 统一管理前端依赖和开发/发布入口。
 
 ```sh
-pnpm --dir web install --frozen-lockfile
-pnpm --dir web build:release
+pnpm install --frozen-lockfile
+pnpm build
 ./target/release/codex-speed
 ```
 
@@ -82,7 +82,7 @@ SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `co
 ## 开发
 
 后端：Axum、Tokio、SQLx/SQLite、官方 `opentelemetry-proto` 类型、`rust-embed`。
-前端：React 19.3、TypeScript 7、Vite 8、Tailwind 4、shadcn/ui（Base UI）、TanStack Query、Recharts 3。依赖由 `Cargo.lock` 和 `web/pnpm-lock.yaml` 锁定。
+前端：React 19.3、TypeScript 7、Vite 8、Tailwind 4、shadcn/ui（Base UI）、TanStack Query、Recharts 3。依赖由 `Cargo.lock` 和 `pnpm-lock.yaml` 锁定。
 
 ### Dev：前后端自动更新
 
@@ -90,13 +90,13 @@ SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `co
 
 ```sh
 cargo install watchexec-cli --locked
-pnpm --dir web install --frozen-lockfile
+pnpm install --frozen-lockfile
 ```
 
 一个命令同时启动前后端：
 
 ```sh
-pnpm --dir web dev
+pnpm dev
 ```
 
 打开 <http://127.0.0.1:5173>。前端使用 Vite + React Fast Refresh；Rust 修改由 Watchexec 自动重新编译并重启。concurrently 管理两个进程，Ctrl+C 一起停止；任一进程退出也会停止另一进程。Rust 编译错误会保留文件监听，修复后再次自动编译。后端重启期间 SSE 自动重连。
@@ -108,21 +108,21 @@ pnpm --dir web dev
 ### Release：单文件内嵌网页
 
 ```sh
-pnpm --dir web build:release
+pnpm build
 ./target/release/codex-speed
 ```
 
 该命令先构建前端，再编译 release Rust 程序。默认启用 `embedded-web` feature，将 `web/dist` 嵌入二进制；运行时不依赖 Vite、Node.js 或磁盘前端文件。release 默认端口仍是 `4318`，数据库使用系统本地数据目录。默认 `cargo run` 同样启用内嵌页面，需要先构建前端；实时开发请用上面的 `dev` 命令。
 
 ```sh
-pnpm --dir web lint
-pnpm --dir web build
+pnpm lint
+pnpm build:frontend
 cargo fmt --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 cargo build --locked
-pnpm --dir web exec playwright install chromium
-pnpm --dir web test
+pnpm browsers
+pnpm test
 ```
 
 Playwright 使用隔离的本地服务和数据库，验证真实 OTLP 接收链路、筛选、去重、桌面/笔记本布局和可访问性，并将预览截图写入 `docs/assets/`。

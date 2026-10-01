@@ -10,11 +10,11 @@ A local web dashboard for Codex's native OpenTelemetry metrics. The frontend is 
 
 ## Build and start
 
-Requires Rust 1.94+, Node.js 24+, and pnpm 12.8.1 for building.
+Requires Rust 1.94+, Node.js 24+, and pnpm 12.8.1 for building. Run all commands from the repository root; the pnpm workspace manages frontend dependencies and development/release scripts.
 
 ```sh
-pnpm --dir web install --frozen-lockfile
-pnpm --dir web build:release
+pnpm install --frozen-lockfile
+pnpm build
 ./target/release/codex-speed
 ```
 
@@ -82,7 +82,7 @@ The listener defaults to `0.0.0.0`; other computers can visit `http://<server IP
 ## Development
 
 Backend: Axum, Tokio, SQLx/SQLite, official `opentelemetry-proto` types and `rust-embed`.
-Frontend: React 19.3, TypeScript 7, Vite 8, Tailwind 4, shadcn/ui with Base UI, TanStack Query and Recharts 3. Dependencies are locked in `Cargo.lock` and `web/pnpm-lock.yaml`.
+Frontend: React 19.3, TypeScript 7, Vite 8, Tailwind 4, shadcn/ui with Base UI, TanStack Query and Recharts 3. Dependencies are locked in `Cargo.lock` and `pnpm-lock.yaml`.
 
 ### Dev: automatic frontend and backend updates
 
@@ -90,13 +90,13 @@ Install the development tools and dependencies once:
 
 ```sh
 cargo install watchexec-cli --locked
-pnpm --dir web install --frozen-lockfile
+pnpm install --frozen-lockfile
 ```
 
 Start both servers with one command:
 
 ```sh
-pnpm --dir web dev
+pnpm dev
 ```
 
 Open <http://127.0.0.1:5173>. Vite provides React Fast Refresh; Watchexec recompiles and restarts Rust on changes. concurrently manages both processes: Ctrl+C stops both, and either process exiting stops the other. Rust compilation errors keep the watcher alive so fixing the source triggers another build. SSE reconnects after backend restarts.
@@ -108,21 +108,21 @@ The backend uses `--no-default-features`: API only, no embedded assets and no de
 ### Release: an executable with embedded frontend
 
 ```sh
-pnpm --dir web build:release
+pnpm build
 ./target/release/codex-speed
 ```
 
 This builds the frontend first, then the release Rust executable. The default `embedded-web` feature embeds `web/dist`; runtime needs no Vite, Node.js or frontend files. Release defaults remain port `4318` and the platform local data directory. Plain `cargo run` also embeds the frontend and requires a frontend build; use the `dev` command above for live development.
 
 ```sh
-pnpm --dir web lint
-pnpm --dir web build
+pnpm lint
+pnpm build:frontend
 cargo fmt --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 cargo build --locked
-pnpm --dir web exec playwright install chromium
-pnpm --dir web test
+pnpm browsers
+pnpm test
 ```
 
 Playwright starts an isolated local server and database, tests live OTLP ingestion, filtering, deduplication, desktop/laptop layouts and accessibility, and writes preview screenshots under `docs/assets/`.
