@@ -15,9 +15,17 @@ export interface Summary {
   input_tokens: number | null;
   cached_input_tokens: number | null;
   output_tokens: number | null;
+  cached_input_percent: number | null;
+  http_attempts: Attempts | null;
+  websocket_send_attempts: Attempts | null;
   token_samples: Record<string, number>;
   last_observation_ms: number | null;
   details: Record<string, Distribution>;
+}
+export interface Attempts {
+  total: number;
+  failed: number;
+  failure_percent: number;
 }
 export interface Snapshot {
   now_ms: number;
@@ -34,7 +42,12 @@ export interface Snapshot {
     input_tokens: number | null;
     cached_input_tokens: number | null;
     output_tokens: number | null;
+    http_failure_percent: number | null;
+    websocket_send_failure_percent: number | null;
   }[];
+}
+export function percent(value: number | null | undefined): string {
+  return value == null ? "—" : `${value.toFixed(1)}%`;
 }
 export function useMetrics(minutes: number, model: string | null) {
   const client = useQueryClient();

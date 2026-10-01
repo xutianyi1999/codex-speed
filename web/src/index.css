@@ -222,6 +222,47 @@
   width: 14px;
   height: 14px;
 }
+.metric-secondary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.metric-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.metric-stat strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.attempt-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+}
+.attempt-summary > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.attempt-summary strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.attempt-count {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.legend-dot[data-tone="purple"] {
+  background: var(--chart-3);
+}
 .metrics-grid [data-slot="card-footer"] {
   margin-top: auto;
   justify-content: space-between;

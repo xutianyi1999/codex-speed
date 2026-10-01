@@ -58,6 +58,9 @@ The export interval still comes from `OTEL_METRIC_EXPORT_INTERVAL` (milliseconds
 | Estimated decode throughput | `1000 × TBT sample count / TBT sum`, from `codex.responses_api_engine_service_tbt.duration_ms` |
 | Input / cached input / output | Sums of `codex.turn.token_usage`, grouped by `token_type` |
 | TTFT P50 / P95 | Histogram estimates; exact nearest-rank values when every exported point contains one observation |
+| Cached input share | `100 × cached input / input`; omitted when fields are missing, report counts differ, or input is zero |
+| HTTP attempt failure rate | Failed / all attempts from the monotonic `codex.api_request` counter |
+| WebSocket send failure rate | Failed / all sends from the monotonic `codex.websocket.request` counter |
 
 The dashboard always selects one model. On first receiving data, it selects the most recently observed model and then preserves that selection. Without model data, the selector shows a waiting state.
 
@@ -66,6 +69,8 @@ The headline numbers describe the selected window (15 minutes, 1 hour, 24 hours,
 Input includes cached input: do not add them together. Token metrics are reported per turn/model, while timing observations have their own scope. Timing and token counts are not paired into request records. Missing fields remain `—`; native reported zero values remain zero. P95 is withheld until there are at least 20 observations. Infinite histogram tails or incompatible bucket layouts can leave quantiles unavailable.
 
 Metrics arrive in periodic batches; server timings typically become available after a timing event, and token usage at turn completion. The dashboard does not show instantaneous per-token speed. Trends use up to 61 time buckets with gaps for missing measurements. Timing dots show bucket means; lines connect observed points across gaps without imputing missing values; the token chart shows bucket sums for input, cached input and output. Select a legend item to inspect one series with its own automatically scaled axis. Cached input is neither stacked nor added to input. No turn-duration, tool-time subtraction, or session-log inference is used.
+
+Failure percentages are computed from the observed attempts in each window or bucket, never by averaging percentages. HTTP and WebSocket counters remain separate: HTTP measures request results, while WebSocket measures sending the request frame, not the result of generation. Retries are separate attempts. Neither percentage is a task failure rate; streaming errors after a successful request/send are outside this scope. Missing counters remain unknown. Cumulative counters use the first export as a baseline and persist that baseline across monitor restarts.
 
 ## Storage and options
 

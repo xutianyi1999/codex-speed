@@ -2,6 +2,12 @@ import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 function payload(model: string, time: number, ttft: number, tbt: number) {
+  const attempts = (name: string, success: boolean, count: number) => ({ name, sum: {
+    isMonotonic: true, aggregationTemporality: 1, dataPoints: [{
+      attributes: [{ key: 'model', value: { stringValue: model } }, { key: 'success', value: { stringValue: String(success) } }],
+      startTimeUnixNano: String(BigInt(time - 1000) * 1000000n), timeUnixNano: String(BigInt(time) * 1000000n), asInt: String(count),
+    }],
+  } })
   const histogram = (name: string, sum: number, tokenType?: string) => ({
     name, histogram: { aggregationTemporality: 1, dataPoints: [{
       attributes: [{ key: 'model', value: { stringValue: model } }, ...(tokenType ? [{ key: 'token_type', value: { stringValue: tokenType } }] : [])],
@@ -15,6 +21,10 @@ function payload(model: string, time: number, ttft: number, tbt: number) {
     histogram('codex.turn.token_usage', 24000, 'input'),
     histogram('codex.turn.token_usage', 18000, 'cached_input'),
     histogram('codex.turn.token_usage', 1200, 'output'),
+    attempts('codex.api_request', true, 18),
+    attempts('codex.api_request', false, 2),
+    attempts('codex.websocket.request', true, 99),
+    attempts('codex.websocket.request', false, 1),
   ] }] }] }
 }
 
@@ -43,6 +53,13 @@ test('setup, live metrics, filters and accessible responsive layout', async ({ p
   await page.keyboard.press('Escape')
   await expect(page.locator('.metrics-grid')).toContainText('28 个有效样本')
   await expect(page.locator('.metrics-grid')).toContainText('33.6K')
+  await expect(page.locator('.metrics-grid')).toContainText('缓存输入占比 75.0%')
+  await expect(page.locator('.metrics-grid')).toContainText('P95')
+  const reliability = page.getByRole('region', { name: '请求与发送失败' })
+  await expect(reliability).toContainText('10.0%')
+  await expect(reliability).toContainText('1.0%')
+  await expect(reliability).toContainText('56 / 560 次尝试')
+  await expect(reliability.locator('.recharts-line')).toHaveCount(2)
   const usage = page.getByRole('region', { name: 'Token 用量趋势' })
   await expect(usage.getByText('输入', { exact: true })).toBeVisible()
   await expect(usage.getByText('缓存输入', { exact: true })).toBeVisible()

@@ -1,5 +1,6 @@
 import { ActivityIcon } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import ReliabilityTrend from "@/components/reliability-trend";
 import TokenTrend from "@/components/token-trend";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
@@ -9,9 +10,10 @@ export default function Trend({
   metric,
 }: {
   data: Snapshot;
-  metric: "ttft_ms" | "decode_tps" | "tokens";
+  metric: "ttft_ms" | "decode_tps" | "tokens" | "reliability";
 }) {
   if (metric === "tokens") return <TokenTrend data={data} />;
+  if (metric === "reliability") return <ReliabilityTrend data={data} />;
   const latency = metric === "ttft_ms";
   const values = data.trend.map((p) => ({
     ...p,

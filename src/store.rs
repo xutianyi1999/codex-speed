@@ -94,6 +94,13 @@ impl Aggregate {
 }
 
 #[derive(Default, Serialize)]
+pub struct Attempts {
+    pub total: u64,
+    pub failed: u64,
+    pub failure_percent: f64,
+}
+
+#[derive(Default, Serialize)]
 pub struct Summary {
     pub ttft: Distribution,
     pub tbt: Distribution,
@@ -101,6 +108,9 @@ pub struct Summary {
     pub input_tokens: Option<f64>,
     pub cached_input_tokens: Option<f64>,
     pub output_tokens: Option<f64>,
+    pub cached_input_percent: Option<f64>,
+    pub http_attempts: Option<Attempts>,
+    pub websocket_send_attempts: Option<Attempts>,
     pub token_samples: BTreeMap<String, u64>,
     pub last_observation_ms: Option<i64>,
     pub details: BTreeMap<String, Distribution>,
@@ -125,6 +135,24 @@ impl SummaryBuilder {
                 .map_or_else(Distribution::default, Aggregate::distribution)
         };
         let tokens = |key: &str| self.metrics.get(key).map(|m| m.sum);
+        let attempts = |success: &str, failed: &str| {
+            let count = |key: &str| self.metrics.get(key).map_or(0, |m| m.count);
+            let failed = count(failed);
+            let total = count(success) + failed;
+            (total > 0).then(|| Attempts {
+                total,
+                failed,
+                failure_percent: 100.0 * failed as f64 / total as f64,
+            })
+        };
+        let cached_input_percent = self
+            .metrics
+            .get("input")
+            .zip(self.metrics.get("cached_input"))
+            .filter(|(input, cached)| {
+                input.count == cached.count && input.sum > 0.0 && cached.sum <= input.sum
+            })
+            .map(|(input, cached)| 100.0 * cached.sum / input.sum);
         Summary {
             ttft: distribution("ttft"),
             tbt: distribution("tbt"),
@@ -136,6 +164,9 @@ impl SummaryBuilder {
             input_tokens: tokens("input"),
             cached_input_tokens: tokens("cached_input"),
             output_tokens: tokens("output"),
+            cached_input_percent,
+            http_attempts: attempts("http_success", "http_failed"),
+            websocket_send_attempts: attempts("websocket_send_success", "websocket_send_failed"),
             token_samples: ["input", "cached_input", "output"]
                 .into_iter()
                 .filter_map(|k| self.metrics.get(k).map(|m| (k.to_owned(), m.count)))
@@ -168,6 +199,8 @@ pub struct TrendPoint {
     pub input_tokens: Option<f64>,
     pub cached_input_tokens: Option<f64>,
     pub output_tokens: Option<f64>,
+    pub http_failure_percent: Option<f64>,
+    pub websocket_send_failure_percent: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -394,6 +427,10 @@ impl Store {
                     input_tokens: value.input_tokens,
                     cached_input_tokens: value.cached_input_tokens,
                     output_tokens: value.output_tokens,
+                    http_failure_percent: value.http_attempts.map(|m| m.failure_percent),
+                    websocket_send_failure_percent: value
+                        .websocket_send_attempts
+                        .map(|m| m.failure_percent),
                 }
             })
             .collect();

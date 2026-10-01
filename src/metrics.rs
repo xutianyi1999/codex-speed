@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::ExportMetricsServiceRequest,
     common::v1::{KeyValue, any_value},
-    metrics::v1::{AggregationTemporality, HistogramDataPoint, metric},
+    metrics::v1::{AggregationTemporality, HistogramDataPoint, metric, number_data_point},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -106,6 +106,63 @@ fn canonical_attributes(attributes: &[KeyValue]) -> Vec<KeyValue> {
     sorted
 }
 
+fn success(attributes: &[KeyValue]) -> Option<bool> {
+    let value = attributes
+        .iter()
+        .find(|a| a.key == "success")?
+        .value
+        .as_ref()?
+        .value
+        .as_ref()?;
+    match value {
+        any_value::Value::BoolValue(value) => Some(*value),
+        any_value::Value::StringValue(value) if value == "true" => Some(true),
+        any_value::Value::StringValue(value) if value == "false" => Some(false),
+        _ => None,
+    }
+}
+
+pub fn decode_json(body: &[u8]) -> Result<ExportMetricsServiceRequest> {
+    let mut value: serde_json::Value = serde_json::from_slice(body)?;
+    // OTLP JSON encodes int64 counters as strings; the generated serde oneof
+    // currently accepts only JSON integers. Normalize this wire representation.
+    if let Some(resources) = value
+        .get_mut("resourceMetrics")
+        .and_then(|v| v.as_array_mut())
+    {
+        for resource in resources {
+            let Some(scopes) = resource
+                .get_mut("scopeMetrics")
+                .and_then(|v| v.as_array_mut())
+            else {
+                continue;
+            };
+            for scope in scopes {
+                let Some(metrics) = scope.get_mut("metrics").and_then(|v| v.as_array_mut()) else {
+                    continue;
+                };
+                for metric in metrics {
+                    let Some(points) = metric
+                        .get_mut("sum")
+                        .and_then(|v| v.get_mut("dataPoints"))
+                        .and_then(|v| v.as_array_mut())
+                    else {
+                        continue;
+                    };
+                    for point in points {
+                        if let Some(value) = point.get_mut("asInt")
+                            && let Some(text) = value.as_str()
+                        {
+                            *value = serde_json::json!(text.parse::<i64>()?);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(serde_json::from_value(value)?)
+}
+
 pub fn parse(request: ExportMetricsServiceRequest) -> Parsed {
     let mut result = Parsed::default();
     for resource in request.resource_metrics {
@@ -124,16 +181,74 @@ pub fn parse(request: ExportMetricsServiceRequest) -> Parsed {
                     "codex.responses_api_inference_time.duration_ms" => "engine",
                     "codex.responses_api_overhead.duration_ms" => "overhead",
                     TOKEN_USAGE => "tokens",
+                    "codex.api_request" => "http",
+                    "codex.websocket.request" => "websocket_send",
                     _ => continue,
                 };
-                let Some(metric::Data::Histogram(histogram)) = metric.data else {
-                    result.rejected += 1;
-                    continue;
+                let counter = matches!(kind, "http" | "websocket_send");
+                let (aggregation_temporality, points) = match metric.data {
+                    Some(metric::Data::Histogram(histogram)) if !counter => {
+                        (histogram.aggregation_temporality, histogram.data_points)
+                    }
+                    Some(metric::Data::Sum(sum)) if counter && sum.is_monotonic => {
+                        let mut points = Vec::new();
+                        for point in sum.data_points {
+                            if point.flags & 1 != 0 {
+                                continue;
+                            }
+                            let value = match point.value {
+                                Some(number_data_point::Value::AsInt(value)) => value as f64,
+                                Some(number_data_point::Value::AsDouble(value)) => value,
+                                None => {
+                                    result.rejected += 1;
+                                    continue;
+                                }
+                            };
+                            if !value.is_finite()
+                                || !(0.0..=9_007_199_254_740_991.0).contains(&value)
+                                || value.fract() != 0.0
+                            {
+                                result.rejected += 1;
+                                continue;
+                            }
+                            // Store an exact event count using the existing additive aggregate.
+                            // Counter values are never interpreted as latency distributions.
+                            points.push(HistogramDataPoint {
+                                attributes: point.attributes,
+                                start_time_unix_nano: point.start_time_unix_nano,
+                                time_unix_nano: point.time_unix_nano,
+                                count: value as u64,
+                                sum: Some(value),
+                                flags: point.flags,
+                                ..Default::default()
+                            });
+                        }
+                        (sum.aggregation_temporality, points)
+                    }
+                    _ => {
+                        result.rejected += 1;
+                        continue;
+                    }
                 };
-                let temporality =
-                    AggregationTemporality::try_from(histogram.aggregation_temporality);
-                for point in histogram.data_points {
-                    let actual_kind = if kind == "tokens" {
+                let temporality = AggregationTemporality::try_from(aggregation_temporality);
+                for point in points {
+                    let counter_kind = if counter {
+                        match (kind, success(&point.attributes)) {
+                            ("http", Some(true)) => Some("http_success"),
+                            ("http", Some(false)) => Some("http_failed"),
+                            ("websocket_send", Some(true)) => Some("websocket_send_success"),
+                            ("websocket_send", Some(false)) => Some("websocket_send_failed"),
+                            _ => {
+                                result.rejected += 1;
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    let actual_kind = if let Some(counter_kind) = counter_kind {
+                        counter_kind
+                    } else if kind == "tokens" {
                         match text(&point.attributes, "token_type") {
                             Some("input") => "input",
                             Some("cached_input") => "cached_input",

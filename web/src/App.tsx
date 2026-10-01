@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { clock, rate, type Snapshot, seconds, tokens, useMetrics } from "@/lib/api";
+import { clock, percent, rate, type Snapshot, seconds, tokens, useMetrics } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 
 const Trend = lazy(() => import("@/components/trend"));
@@ -172,6 +172,18 @@ function Details({ data }: { data: Snapshot }) {
             <dd>
               原生 turn.token_usage
               的报告总量。输入包含缓存输入，两者不相加。不同字段分别统计，缺失不补零。
+            </dd>
+          </div>
+          <div>
+            <dt>缓存输入占比</dt>
+            <dd>缓存输入总量 ÷ 输入总量。字段缺失、报告数量不一致或输入为零时不显示。</dd>
+          </div>
+          <div>
+            <dt>请求与发送失败</dt>
+            <dd>
+              失败尝试数 ÷ 全部尝试数。HTTP 请求与 WebSocket 发送分别统计，重试也计数。 WebSocket
+              只反映发送结果，HTTP 只反映请求结果，均不代表整轮生成或任务是否成功。
+              未收到尝试计数时显示 —。
             </dd>
           </div>
           <div>
@@ -327,10 +339,11 @@ export default function App() {
           <Card tone="blue">
             <CardHeader>
               <CardTitle>首 token 延迟</CardTitle>
-              <CardDescription>服务端 TTFT · 平均</CardDescription>
+              <CardDescription>所选窗口 · 平均 Service TTFT</CardDescription>
               <CardAction>
                 <Hint label="首 token 延迟说明">
-                  服务端报告的 Service TTFT，不含客户端网络延迟。
+                  服务端报告的 Service TTFT，不含客户端网络延迟。主数值是所选窗口内的平均值。 P50
+                  为中位数，P95 为第 95 百分位，P95 至少需要 20 个样本；估算分位数标记 ≈。
                 </Hint>
               </CardAction>
             </CardHeader>
@@ -343,13 +356,25 @@ export default function App() {
                 <TimerIcon aria-hidden="true" />
                 开始生成前的等待
               </div>
+              <div className="metric-secondary">
+                <span className="metric-stat">
+                  P50{" "}
+                  <strong>
+                    {seconds(summary?.ttft.p50_ms)} s
+                    {summary?.ttft.quantiles_approximate && summary.ttft.p50_ms != null ? " ≈" : ""}
+                  </strong>
+                </span>
+                <span className="metric-stat">
+                  P95{" "}
+                  <strong>
+                    {seconds(summary?.ttft.p95_ms)} s
+                    {summary?.ttft.quantiles_approximate && summary.ttft.p95_ms != null ? " ≈" : ""}
+                  </strong>
+                </span>
+              </div>
             </CardContent>
             <CardFooter>
               <span>{summary?.ttft.samples || 0} 个有效样本</span>
-              <span>
-                P50 {seconds(summary?.ttft.p50_ms)} s
-                {summary?.ttft.quantiles_approximate && summary.ttft.p50_ms != null ? " ≈" : ""}
-              </span>
             </CardFooter>
           </Card>
           <Card tone="green">
@@ -357,7 +382,7 @@ export default function App() {
               <CardTitle>
                 Decode 吞吐 <Badge variant="secondary">估算</Badge>
               </CardTitle>
-              <CardDescription>基于平均 Service TBT</CardDescription>
+              <CardDescription>所选窗口 · 基于平均 Service TBT</CardDescription>
               <CardAction>
                 <Hint label="Decode 吞吐说明">
                   1000 ÷ 平均 Service TBT（ms），反映所选窗口的服务端计时，不是逐 token 实测。
@@ -372,21 +397,29 @@ export default function App() {
               <div className="metric-context">
                 <GaugeIcon aria-hidden="true" />首 token 之后的生成速度参考
               </div>
+              <div className="metric-secondary">
+                <span className="metric-stat">
+                  平均 TBT{" "}
+                  <strong>
+                    {summary?.tbt.mean_ms == null ? "—" : summary.tbt.mean_ms.toFixed(1)} ms
+                  </strong>
+                </span>
+              </div>
             </CardContent>
             <CardFooter>
               <span>{summary?.tbt.samples || 0} 个有效样本</span>
-              <span>
-                TBT {summary?.tbt.mean_ms == null ? "—" : summary.tbt.mean_ms.toFixed(1)} ms
-              </span>
             </CardFooter>
           </Card>
           <Card>
             <CardHeader>
               <CardTitle>Token 用量</CardTitle>
-              <CardDescription>所选窗口内的报告总量</CardDescription>
+              <CardDescription>所选窗口 · 累计上报用量</CardDescription>
               <CardAction>
                 <Hint label="Token 用量说明">
-                  输入包含缓存输入。各字段分别统计，缺失显示 —，不补零。
+                  主数值为输出 tokens 的累计上报总量。输入包含缓存输入，不能相加。
+                  缓存输入占比为窗口缓存输入总量 ÷
+                  输入总量，不是请求缓存命中率；报告数量不一致时不显示。 各字段分别统计，缺失显示
+                  —，不补零。
                 </Hint>
               </CardAction>
             </CardHeader>
@@ -397,7 +430,12 @@ export default function App() {
               </div>
               <div className="metric-context">
                 <ArrowUpRightIcon aria-hidden="true" />
-                输出 tokens
+                输出总量
+              </div>
+              <div className="metric-secondary">
+                <span className="metric-stat">
+                  缓存输入占比 <strong>{percent(summary?.cached_input_percent)}</strong>
+                </span>
               </div>
             </CardContent>
             <CardFooter>
@@ -410,7 +448,7 @@ export default function App() {
           <div className="section-heading">
             <div>
               <h2>近期趋势</h2>
-              <p>点表示时间桶内的平均值；连线仅展示趋势，空档没有观测。</p>
+              <p>首 token 为桶内平均延迟，Decode 基于桶内平均 TBT 估算；连线仅展示趋势。</p>
             </div>
             {data && <Details data={data} />}
           </div>
@@ -418,7 +456,7 @@ export default function App() {
             <div className="chart-panel">
               <div className="chart-heading">
                 <span className="legend-dot" />
-                <h3>首 token 延迟</h3>
+                <h3>平均首 token 延迟</h3>
                 <span>s · 越低越快</span>
               </div>
               {data ? (
@@ -449,13 +487,50 @@ export default function App() {
           <div className="section-heading">
             <div>
               <h2>Token 用量趋势</h2>
-              <p>点表示收到的用量合计，输入包含缓存输入；点击图例单独查看，连线仅展示趋势。</p>
+              <p>点表示桶内累计上报用量，输入包含缓存输入；点击图例单独查看，连线仅展示趋势。</p>
             </div>
             <span className="text-xs text-muted-foreground">tokens</span>
           </div>
           {data ? (
             <Suspense fallback={<div className="chart-empty" />}>
               <Trend data={data} metric="tokens" />
+            </Suspense>
+          ) : (
+            <div className="chart-empty" />
+          )}
+        </section>
+        <section className="trend-section" aria-label="请求与发送失败">
+          <div className="section-heading">
+            <div>
+              <h2>请求与发送失败</h2>
+              <p>汇总值按所选窗口计算，图中点为桶内失败率；重试也计数，不代表任务失败率。</p>
+            </div>
+          </div>
+          <div className="attempt-summary">
+            <div>
+              <span className="legend-dot" />
+              <span>HTTP 请求失败率</span>
+              <strong>{percent(summary?.http_attempts?.failure_percent)}</strong>
+              <span className="attempt-count">
+                {summary?.http_attempts
+                  ? `${tokens(summary.http_attempts.failed)} / ${tokens(summary.http_attempts.total)} 次尝试`
+                  : "等待请求计数"}
+              </span>
+            </div>
+            <div>
+              <span className="legend-dot" data-tone="purple" />
+              <span>WebSocket 发送失败率</span>
+              <strong>{percent(summary?.websocket_send_attempts?.failure_percent)}</strong>
+              <span className="attempt-count">
+                {summary?.websocket_send_attempts
+                  ? `${tokens(summary.websocket_send_attempts.failed)} / ${tokens(summary.websocket_send_attempts.total)} 次尝试`
+                  : "等待发送计数"}
+              </span>
+            </div>
+          </div>
+          {data ? (
+            <Suspense fallback={<div className="chart-empty" />}>
+              <Trend data={data} metric="reliability" />
             </Suspense>
           ) : (
             <div className="chart-empty" />

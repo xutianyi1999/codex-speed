@@ -23,7 +23,7 @@ fn export(now: i64, model: &str, count: u64, sum: f64, temporality: u32) -> Valu
     }]}]}]})
 }
 fn parsed(value: Value) -> Parsed {
-    metrics::parse(serde_json::from_value(value).unwrap())
+    metrics::parse(metrics::decode_json(&serde_json::to_vec(&value).unwrap()).unwrap())
 }
 fn point(now: i64, start: u64, count: u64, sum: f64, cumulative: bool) -> Point {
     Point {
@@ -388,4 +388,159 @@ async fn failed_database_is_recreated_without_migration() {
         .unwrap();
     let snap = store.snapshot(60, None, String::new(), now).await.unwrap();
     assert_eq!(snap.summary.ttft.samples, 1);
+}
+
+fn counter_export(now: i64, name: &str, success: Value, value: Value, temporality: u32) -> Value {
+    json!({"resourceMetrics":[{"scopeMetrics":[{"metrics":[{
+        "name":name,"sum":{"isMonotonic":true,"aggregationTemporality":temporality,"dataPoints":[{
+            "attributes":[{"key":"model","value":{"stringValue":"gpt-reliability"}},{"key":"success","value":success}],
+            "startTimeUnixNano":((now-60_000) as u64*1_000_000).to_string(),
+            "timeUnixNano":(now as u64*1_000_000).to_string(),
+            "asInt":value
+        }]}
+    }]}]}]})
+}
+
+#[tokio::test]
+async fn attempt_counters_are_separate_exact_deduplicated_and_missing_is_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    let empty = store.snapshot(60, None, String::new(), now).await.unwrap();
+    assert!(empty.summary.http_attempts.is_none());
+    assert!(empty.summary.websocket_send_attempts.is_none());
+    for (name, success, value) in [
+        ("codex.api_request", true, 9),
+        ("codex.api_request", false, 1),
+        ("codex.websocket.request", true, 3),
+        ("codex.websocket.request", false, 1),
+    ] {
+        let data = counter_export(
+            now,
+            name,
+            json!({"stringValue":success.to_string()}),
+            json!(value.to_string()),
+            1,
+        );
+        assert_eq!(
+            store.ingest(parsed(data.clone()), now).await.unwrap(),
+            (1, 0)
+        );
+        assert_eq!(store.ingest(parsed(data), now).await.unwrap(), (0, 0));
+    }
+    let snap = store.snapshot(60, None, String::new(), now).await.unwrap();
+    let http = snap.summary.http_attempts.unwrap();
+    assert_eq!(
+        (http.total, http.failed, http.failure_percent),
+        (10, 1, 10.0)
+    );
+    let ws = snap.summary.websocket_send_attempts.unwrap();
+    assert_eq!((ws.total, ws.failed, ws.failure_percent), (4, 1, 25.0));
+    assert_eq!(
+        snap.trend
+            .iter()
+            .filter(|p| p.http_failure_percent.is_some())
+            .count(),
+        1
+    );
+    assert!(snap.summary.ttft.mean_ms.is_none());
+
+    // All successful attempts produce a real zero failure rate.
+    let next = now + 60_000;
+    let ok = counter_export(
+        next,
+        "codex.api_request",
+        json!({"boolValue":true}),
+        json!(2),
+        1,
+    );
+    assert_eq!(store.ingest(parsed(ok), next).await.unwrap(), (1, 0));
+    let snap = store.snapshot(60, None, String::new(), next).await.unwrap();
+    assert!(
+        snap.trend
+            .iter()
+            .any(|p| p.http_failure_percent == Some(0.0))
+    );
+    let invalid = counter_export(
+        next,
+        "codex.api_request",
+        json!({"stringValue":"unknown"}),
+        json!(1),
+        1,
+    );
+    assert_eq!(parsed(invalid).rejected, 1);
+    let invalid = counter_export(
+        next,
+        "codex.api_request",
+        json!({"boolValue":true}),
+        json!(-1),
+        1,
+    );
+    assert_eq!(parsed(invalid).rejected, 1);
+}
+
+#[tokio::test]
+async fn cumulative_attempt_counters_use_baselines_and_restart_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    let first = counter_export(
+        now,
+        "codex.websocket.request",
+        json!({"boolValue":false}),
+        json!(8),
+        2,
+    );
+    assert_eq!(
+        store.ingest(parsed(first.clone()), now).await.unwrap(),
+        (0, 0)
+    );
+    let mut next = first.clone();
+    let point =
+        &mut next["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["sum"]["dataPoints"][0];
+    point["timeUnixNano"] = json!(((now + 1) as u64 * 1_000_000).to_string());
+    point["asInt"] = json!(10);
+    assert_eq!(
+        store.ingest(parsed(next.clone()), now + 1).await.unwrap(),
+        (1, 0)
+    );
+    assert_eq!(store.ingest(parsed(next), now + 1).await.unwrap(), (0, 0));
+    let snap = store
+        .snapshot(60, None, String::new(), now + 1)
+        .await
+        .unwrap();
+    assert_eq!(snap.summary.websocket_send_attempts.unwrap().failed, 2);
+    assert_eq!(store.ingest(parsed(first), now + 1).await.unwrap(), (0, 0));
+}
+
+#[tokio::test]
+async fn cache_share_requires_complete_counts_and_nonzero_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    for (model, input_count, input_sum, cached_count, cached_sum) in [
+        ("paired", 2, 200.0, 2, 150.0),
+        ("partial", 2, 200.0, 1, 150.0),
+        ("zero", 1, 0.0, 1, 0.0),
+        ("invalid_share", 1, 10.0, 1, 20.0),
+    ] {
+        for (kind, count, sum) in [
+            ("input", input_count, input_sum),
+            ("cached_input", cached_count, cached_sum),
+        ] {
+            let mut p = point(now, 1, count, sum, false);
+            p.model = model.into();
+            p.kind = kind.into();
+            p.stream = format!("{model}-{kind}");
+            store.ingest(batch(p), now).await.unwrap();
+        }
+        let snap = store
+            .snapshot(60, Some(model.into()), String::new(), now)
+            .await
+            .unwrap();
+        assert_eq!(
+            snap.summary.cached_input_percent,
+            if model == "paired" { Some(75.0) } else { None }
+        );
+    }
 }

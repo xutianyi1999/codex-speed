@@ -136,7 +136,7 @@ async fn ingest(
         }
     };
     let request: ExportMetricsServiceRequest = if json {
-        serde_json::from_slice(&body)
+        metrics::decode_json(&body)
             .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "Invalid OTLP JSON"))?
     } else {
         Message::decode(body)
