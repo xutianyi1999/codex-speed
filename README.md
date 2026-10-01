@@ -5,6 +5,10 @@
 A local terminal dashboard for Codex CLI throughput and first-output latency, grouped by model.
 Reads existing logs without changing your provider or proxying requests.
 
+![Codex Speed dashboard showing model metrics and throughput/latency charts](docs/assets/dashboard.png)
+
+Dashboard preview with synthetic demo data.
+
 ## Quick start
 
 Requires Rust 1.88+.

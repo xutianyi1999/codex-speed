@@ -5,6 +5,10 @@
 按模型汇总 Codex CLI 吞吐和首输出延迟的本地终端仪表盘。
 读取现有日志，无需修改 provider 或代理请求。
 
+![Codex Speed 模型指标、吞吐和延迟趋势图](docs/assets/dashboard.png)
+
+界面预览，使用模拟数据。
+
 ## 快速开始
 
 需要 Rust 1.88+。
