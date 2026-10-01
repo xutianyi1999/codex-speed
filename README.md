@@ -13,11 +13,8 @@ A local web dashboard for Codex's native OpenTelemetry metrics. The frontend is 
 Requires Rust 1.94+, Node.js 24+, and pnpm 12.8.1 for building.
 
 ```sh
-cd web
-pnpm install --frozen-lockfile
-pnpm build
-cd ..
-cargo build --release --locked
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build:release
 ./target/release/codex-speed
 ```
 
@@ -62,6 +59,8 @@ The export interval still comes from `OTEL_METRIC_EXPORT_INTERVAL` (milliseconds
 | Input / cached input / output | Sums of `codex.turn.token_usage`, grouped by `token_type` |
 | TTFT P50 / P95 | Histogram estimates; exact nearest-rank values when every exported point contains one observation |
 
+The dashboard always selects one model. On first receiving data, it selects the most recently observed model and then preserves that selection. Without model data, the selector shows a waiting state.
+
 The headline numbers describe the selected window (15 minutes, 1 hour, 24 hours, or 7 days). Each metric has its own sample count. These are **server-reported timing references**, not a client benchmark. Service TBT has an internal cross-engine-call aggregation scope; its inverse is explicitly an estimate, not measured per-token decode throughput. IAPI and engine/overhead timings are available in the details dialog when reported.
 
 Input includes cached input: do not add them together. Token metrics are reported per turn/model, while timing observations have their own scope. Timing and token counts are not paired into request records. Missing fields remain `—`; native reported zero values remain zero. P95 is withheld until there are at least 20 observations. Infinite histogram tails or incompatible bucket layouts can leave quantiles unavailable.
@@ -70,7 +69,7 @@ Metrics arrive in periodic batches; server timings typically become available af
 
 ## Storage and options
 
-SQLite stores supported histogram points for seven days in the platform's local data directory under `codex-speed/metrics.sqlite` (on Linux, typically `~/.local/share/codex-speed/`). History survives restarts. Only model names, timing/token aggregates, timestamps and hashed stream identities are persisted, not prompts or raw telemetry envelopes.
+SQLite stores supported histogram points for seven days in the platform's local data directory under `codex-speed/metrics.sqlite` (on Linux, typically `~/.local/share/codex-speed/`). History survives restarts. The schema is defined in `src/schema.sql`. If loading fails at startup, the database and WAL/SHM files are deleted and an empty database is created. There are no migrations or old-schema compatibility paths; a failed recreation stops startup. Only model names, timing/token aggregates, timestamps and hashed stream identities are persisted, not prompts or raw telemetry envelopes.
 
 | Option | Default |
 | --- | --- |
@@ -85,7 +84,35 @@ The listener defaults to `0.0.0.0`; other computers can visit `http://<server IP
 Backend: Axum, Tokio, SQLx/SQLite, official `opentelemetry-proto` types and `rust-embed`.
 Frontend: React 19.3, TypeScript 7, Vite 8, Tailwind 4, shadcn/ui with Base UI, TanStack Query and Recharts 3. Dependencies are locked in `Cargo.lock` and `web/pnpm-lock.yaml`.
 
-For hot reload, start the Rust server on port 4318, then `cd web && pnpm dev`. Vite proxies the API and SSE to the backend. Rebuild `web/dist` and the Rust executable for embedded frontend changes. The Rust build fails with instructions if the frontend has not been built.
+### Dev: automatic frontend and backend updates
+
+Install the development tools and dependencies once:
+
+```sh
+cargo install watchexec-cli --locked
+pnpm --dir web install --frozen-lockfile
+```
+
+Start both servers with one command:
+
+```sh
+pnpm --dir web dev
+```
+
+Open <http://127.0.0.1:5173>. Vite provides React Fast Refresh; Watchexec recompiles and restarts Rust on changes. concurrently manages both processes: Ctrl+C stops both, and either process exiting stops the other. Rust compilation errors keep the watcher alive so fixing the source triggers another build. SSE reconnects after backend restarts.
+
+The development API listens on `0.0.0.0:4319` and Vite on `0.0.0.0:5173`. Vite proxies `/api`, SSE and `/v1/metrics`. The database lives at `target/dev-data/metrics.sqlite`, and build artifacts at `target/dev-build/`. These are separate from the default release port and data directory, so both environments can run simultaneously.
+
+The backend uses `--no-default-features`: API only, no embedded assets and no dependency on `web/dist`. Connect Codex to `http://127.0.0.1:4319/v1/metrics`; the dashboard connection command uses the current Vite address and forwards through its `/v1/metrics` proxy.
+
+### Release: an executable with embedded frontend
+
+```sh
+pnpm --dir web build:release
+./target/release/codex-speed
+```
+
+This builds the frontend first, then the release Rust executable. The default `embedded-web` feature embeds `web/dist`; runtime needs no Vite, Node.js or frontend files. Release defaults remain port `4318` and the platform local data directory. Plain `cargo run` also embeds the frontend and requires a frontend build; use the `dev` command above for live development.
 
 ```sh
 pnpm --dir web lint

@@ -2,9 +2,11 @@ use crate::{
     metrics,
     store::{Snapshot, Store},
 };
+#[cfg(feature = "embedded-web")]
+use axum::body::Body;
 use axum::{
     Json, Router,
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{DefaultBodyLimit, Query, State},
     http::{HeaderMap, StatusCode, Uri, header},
     response::{
@@ -17,6 +19,7 @@ use opentelemetry_proto::tonic::collector::metrics::v1::{
     ExportMetricsPartialSuccess, ExportMetricsServiceRequest, ExportMetricsServiceResponse,
 };
 use prost::Message;
+#[cfg(feature = "embedded-web")]
 use rust_embed::Embed;
 use serde::Deserialize;
 use std::{convert::Infallible, sync::Arc, time::Duration};
@@ -24,6 +27,7 @@ use tokio::sync::watch;
 use tokio_stream::{StreamExt, wrappers::WatchStream};
 use tower_http::{compression::CompressionLayer, decompression::RequestDecompressionLayer};
 
+#[cfg(feature = "embedded-web")]
 #[derive(Embed)]
 #[folder = "web/dist/"]
 struct Assets;
@@ -31,7 +35,7 @@ struct Assets;
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<Store>,
-    pub updates: watch::Sender<u64>,
+    pub updates: watch::Sender<Option<u64>>,
     pub endpoint: String,
 }
 
@@ -61,7 +65,7 @@ pub fn router(state: AppState) -> Router {
             "/api/health",
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
         )
-        .fallback(get(asset))
+        .merge(frontend_routes())
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .layer(RequestDecompressionLayer::new())
         .layer(CompressionLayer::new())
@@ -145,9 +149,11 @@ async fn ingest(
         .await
         .map_err(internal)?;
     // Even a batch with no supported measurements confirms the exporter is connected.
-    state
-        .updates
-        .send_modify(|revision| *revision = revision.wrapping_add(1));
+    state.updates.send_modify(|revision| {
+        if let Some(value) = revision {
+            *value = value.wrapping_add(1);
+        }
+    });
     let response = ExportMetricsServiceResponse {
         partial_success: (rejected > 0).then(|| ExportMetricsPartialSuccess {
             rejected_data_points: rejected,
@@ -219,12 +225,26 @@ async fn snapshot(
 }
 
 async fn events(State(state): State<AppState>) -> impl IntoResponse {
-    let stream = WatchStream::new(state.updates.subscribe()).map(|revision| {
-        Ok::<_, Infallible>(Event::default().event("metrics").data(revision.to_string()))
-    });
+    let stream = WatchStream::new(state.updates.subscribe())
+        .map_while(|revision| revision)
+        .map(|revision| {
+            Ok::<_, Infallible>(Event::default().event("metrics").data(revision.to_string()))
+        });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
 }
 
+fn frontend_routes() -> Router<AppState> {
+    #[cfg(feature = "embedded-web")]
+    {
+        Router::new().fallback(get(asset))
+    }
+    #[cfg(not(feature = "embedded-web"))]
+    {
+        Router::new()
+    }
+}
+
+#[cfg(feature = "embedded-web")]
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };

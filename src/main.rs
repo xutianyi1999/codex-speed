@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
         .context("Cannot locate a data directory; pass --data-dir")?;
     std::fs::create_dir_all(&data_dir)?;
     let store = store::Store::open(&data_dir.join("metrics.sqlite")).await?;
-    let (updates, _) = watch::channel(0_u64);
+    let (updates, _) = watch::channel(Some(0_u64));
     let listener = tokio::net::TcpListener::bind((args.host, args.port)).await?;
     let address = listener.local_addr()?;
     let dashboard = if address.ip().is_unspecified() {
@@ -52,17 +52,28 @@ async fn main() -> Result<()> {
     };
     let state = server::AppState {
         store: Arc::new(store),
-        updates,
+        updates: updates.clone(),
         endpoint: format!("http://{dashboard}/v1/metrics"),
     };
     println!("Listening:   {address}");
+    #[cfg(feature = "embedded-web")]
     println!("Codex Speed: http://{dashboard}");
+    #[cfg(not(feature = "embedded-web"))]
+    println!("API-only development server; dashboard is served by Vite on port 5173");
     println!("Metrics:     {}", state.endpoint);
     println!("Data:        {}", data_dir.display());
-    axum::serve(listener, server::router(state))
-        .with_graceful_shutdown(async {
+    let mut shutdown = updates.subscribe();
+    let server = axum::serve(listener, server::router(state)).with_graceful_shutdown(async move {
+        let _ = shutdown.wait_for(Option::is_none).await;
+    });
+    tokio::select! {
+        result = server => result?,
+        _ = async {
             let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+            // End every SSE stream before waiting for HTTP connections to drain.
+            updates.send_replace(None);
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        } => eprintln!("Shutdown deadline reached; closing remaining connections"),
+    }
     Ok(())
 }

@@ -210,7 +210,7 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
     let now = chrono::Utc::now().timestamp_millis();
-    let (updates, _) = tokio::sync::watch::channel(0);
+    let (updates, _) = tokio::sync::watch::channel(Some(0));
     let state = AppState {
         store: Arc::new(store),
         updates,
@@ -254,9 +254,14 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let html = to_bytes(response.into_body(), 1000000).await.unwrap();
-    assert!(String::from_utf8_lossy(&html).contains("Codex Speed"));
+    #[cfg(feature = "embedded-web")]
+    {
+        assert_eq!(response.status(), StatusCode::OK);
+        let html = to_bytes(response.into_body(), 1000000).await.unwrap();
+        assert!(String::from_utf8_lossy(&html).contains("Codex Speed"));
+    }
+    #[cfg(not(feature = "embedded-web"))]
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let request = Request::builder()
         .uri("/api/snapshot")
         .header("host", "192.168.1.10:4318")
@@ -267,4 +272,93 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
         app.oneshot(request).await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
+}
+
+#[tokio::test]
+async fn shutdown_ends_sse_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let (updates, _) = tokio::sync::watch::channel(Some(0));
+    let app = server::router(AppState {
+        store: Arc::new(store),
+        updates: updates.clone(),
+        endpoint: "http://127.0.0.1:4318/v1/metrics".into(),
+    });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/events")
+                .header("host", "127.0.0.1:4318")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    updates.send_replace(None);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        to_bytes(response.into_body(), 10000),
+    )
+    .await
+    .expect("SSE should end on shutdown")
+    .unwrap();
+}
+
+#[tokio::test]
+async fn default_snapshot_selects_one_model_without_combining_metrics() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    store
+        .ingest(parsed(export(now - 1000, "older", 1, 2000.0, 1)), now)
+        .await
+        .unwrap();
+    store
+        .ingest(parsed(export(now, "latest", 1, 4000.0, 1)), now)
+        .await
+        .unwrap();
+    let snap = store.snapshot(60, None, String::new(), now).await.unwrap();
+    assert_eq!(snap.selected_model.as_deref(), Some("latest"));
+    assert_eq!(snap.summary.ttft.samples, 1);
+    assert_eq!(snap.summary.ttft.mean_ms, Some(4000.0));
+    assert_eq!(snap.models.len(), 2);
+    let snap = store
+        .snapshot(60, Some("older".into()), String::new(), now)
+        .await
+        .unwrap();
+    assert_eq!(snap.summary.ttft.mean_ms, Some(2000.0));
+}
+
+#[tokio::test]
+async fn failed_database_is_recreated_without_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("metrics.sqlite");
+    std::fs::write(&path, b"not a SQLite database").unwrap();
+    let store = Store::open(&path).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    assert!(
+        store
+            .snapshot(60, None, String::new(), now)
+            .await
+            .unwrap()
+            .models
+            .is_empty()
+    );
+    drop(store);
+    let old = sqlx::SqlitePool::connect(&format!("sqlite:{}", path.display()))
+        .await
+        .unwrap();
+    sqlx::raw_sql("DROP TABLE receiver; CREATE TABLE receiver (obsolete INTEGER);")
+        .execute(&old)
+        .await
+        .unwrap();
+    old.close().await;
+    let store = Store::open(&path).await.unwrap();
+    store
+        .ingest(parsed(export(now, "new", 1, 2000.0, 1)), now)
+        .await
+        .unwrap();
+    let snap = store.snapshot(60, None, String::new(), now).await.unwrap();
+    assert_eq!(snap.summary.ttft.samples, 1);
 }

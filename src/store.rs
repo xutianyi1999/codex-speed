@@ -1,5 +1,5 @@
 use crate::metrics::{Histogram, Parsed};
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use sqlx::{
     Row, SqlitePool,
@@ -181,6 +181,31 @@ pub struct Snapshot {
 
 impl Store {
     pub async fn open(path: &Path) -> Result<Self> {
+        match Self::open_once(path).await {
+            Ok(store) => Ok(store),
+            Err(error) => {
+                eprintln!(
+                    "Cannot load metrics database ({error}); deleting it and creating an empty database"
+                );
+                for suffix in ["", "-wal", "-shm"] {
+                    let mut file = path.as_os_str().to_os_string();
+                    file.push(suffix);
+                    match std::fs::remove_file(Path::new(&file)) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => {
+                            return Err(error).context("Cannot delete failed metrics database");
+                        }
+                    }
+                }
+                Self::open_once(path)
+                    .await
+                    .context("Cannot create a fresh metrics database")
+            }
+        }
+    }
+
+    async fn open_once(path: &Path) -> Result<Self> {
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -190,23 +215,36 @@ impl Store {
             .max_connections(4)
             .connect_with(options)
             .await?;
-        // Fresh schema only; no old log database or migration path.
-        sqlx::raw_sql("CREATE TABLE IF NOT EXISTS samples (
-                stream TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL,
-                time_ms INTEGER NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, histogram TEXT NOT NULL,
-                PRIMARY KEY (stream, start, end));
-            CREATE INDEX IF NOT EXISTS samples_time ON samples(time_ms);
-            CREATE TABLE IF NOT EXISTS cumulative (
-                stream TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, histogram TEXT NOT NULL,
-                updated_ms INTEGER NOT NULL, PRIMARY KEY (stream, start));
-            CREATE TABLE IF NOT EXISTS receiver (id INTEGER PRIMARY KEY CHECK (id = 1), last_received_ms INTEGER NOT NULL);")
-            .execute(&pool).await?;
-        let store = Self {
-            pool,
-            last_pruned: AtomicI64::new(0),
-        };
-        store.prune(chrono::Utc::now().timestamp_millis()).await?;
-        Ok(store)
+        let result = async {
+            let check: String = sqlx::query_scalar("PRAGMA quick_check")
+                .fetch_one(&pool)
+                .await?;
+            if check != "ok" {
+                bail!("SQLite integrity check failed: {check}");
+            }
+            sqlx::raw_sql(include_str!("schema.sql"))
+                .execute(&pool)
+                .await?;
+            // Validate every table used by the current implementation; never migrate old schemas.
+            sqlx::raw_sql(
+                "SELECT stream, start, end, time_ms, model, kind, histogram FROM samples LIMIT 0;
+                SELECT stream, start, end, histogram, updated_ms FROM cumulative LIMIT 0;
+                SELECT id, last_received_ms FROM receiver LIMIT 0;",
+            )
+            .execute(&pool)
+            .await?;
+            let store = Self {
+                pool: pool.clone(),
+                last_pruned: AtomicI64::new(0),
+            };
+            store.prune(chrono::Utc::now().timestamp_millis()).await?;
+            Ok(store)
+        }
+        .await;
+        if result.is_err() {
+            pool.close().await;
+        }
+        result
     }
 
     async fn prune(&self, now: i64) -> Result<()> {
@@ -309,8 +347,10 @@ impl Store {
     ) -> Result<Snapshot> {
         self.prune(now).await?;
         let since = now - i64::from(minutes) * 60_000;
-        let rows = sqlx::query("SELECT time_ms, model, kind, histogram FROM samples WHERE time_ms >= ? AND time_ms <= ? ORDER BY time_ms")
+        let rows = sqlx::query("SELECT time_ms, model, kind, histogram FROM samples WHERE time_ms >= ? AND time_ms <= ? ORDER BY time_ms, model")
             .bind(since).bind(now + 60_000).fetch_all(&self.pool).await?;
+        // With no explicit choice, monitor the most recently observed model.
+        let selected = selected.or_else(|| rows.last().and_then(|row| row.try_get("model").ok()));
         let mut models: BTreeMap<String, SummaryBuilder> = BTreeMap::new();
         let mut summary = SummaryBuilder::default();
         let mut trends: BTreeMap<i64, SummaryBuilder> = BTreeMap::new();
@@ -324,7 +364,7 @@ impl Store {
                 .entry(model.clone())
                 .or_default()
                 .add(&kind, histogram.clone(), time);
-            if selected.as_ref().is_some_and(|s| s != &model) {
+            if selected.as_ref() != Some(&model) {
                 continue;
             }
             summary.add(&kind, histogram.clone(), time);

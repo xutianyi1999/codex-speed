@@ -13,11 +13,8 @@
 构建需要 Rust 1.94+、Node.js 24+ 和 pnpm 12.8.1。
 
 ```sh
-cd web
-pnpm install --frozen-lockfile
-pnpm build
-cd ..
-cargo build --release --locked
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build:release
 ./target/release/codex-speed
 ```
 
@@ -62,6 +59,8 @@ metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics"
 | 输入、缓存输入、输出 tokens | `codex.turn.token_usage`，按 `token_type` 分别累加 |
 | TTFT P50 / P95 | 从直方图估算；所有批次均只有一个观测时，使用精确值计算最近秩分位数 |
 
+页面始终选择一个模型；首次有数据时默认选择最近上报的模型，之后保留当前选择。暂无模型数据时，选择器显示等待状态。
+
 主指标反映所选窗口内的统计，支持 15 分钟、1 小时、24 小时和 7 天。每个指标有自己的有效样本数。这些是**服务端报告的性能参考值**，不是客户端 bench。Service TBT 的内部口径涉及跨 engine calls 的聚合，所以倒数明确标为估算，不能等同于逐 token 实测吞吐。提供方返回的 IAPI、Engine 和额外耗时放在详情中。
 
 输入已经包含缓存输入，不能相加。Token 指标按 turn/model 报告，计时观测有自己的范围，不强行拼成逐请求记录。缺失显示 `—`，原生报告的零值保留为零。至少 20 个观测后才显示 P95。无限尾桶或不同桶边界可能使分位数无法估算。
@@ -70,7 +69,7 @@ metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics"
 
 ## 数据与参数
 
-SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `codex-speed/metrics.sqlite`，Linux 通常是 `~/.local/share/codex-speed/`。重启后历史保留。只保存模型名、计时/token 聚合、时间戳和流标识哈希，不保存提示词或原始遥测包。
+SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `codex-speed/metrics.sqlite`，Linux 通常是 `~/.local/share/codex-speed/`。重启后历史保留。建表定义在 `src/schema.sql`。启动时数据库加载失败会删除数据库及 WAL/SHM 文件，重建空库；不迁移或兼容旧结构，重建仍失败则退出。只保存模型名、计时/token 聚合、时间戳和流标识哈希，不保存提示词或原始遥测包。
 
 | 参数 | 默认值 |
 | --- | --- |
@@ -85,7 +84,35 @@ SQLite 保存最近七天的数据，位置为系统的本地数据目录下 `co
 后端：Axum、Tokio、SQLx/SQLite、官方 `opentelemetry-proto` 类型、`rust-embed`。
 前端：React 19.3、TypeScript 7、Vite 8、Tailwind 4、shadcn/ui（Base UI）、TanStack Query、Recharts 3。依赖由 `Cargo.lock` 和 `web/pnpm-lock.yaml` 锁定。
 
-热更新：先在 4318 端口启动 Rust 服务，再执行 `cd web && pnpm dev`。Vite 将 API 和 SSE 转发给后端。内嵌页面有改动时，需要重新构建 `web/dist` 和 Rust 程序。尚未构建前端时，Rust 构建会给出明确操作提示。
+### Dev：前后端自动更新
+
+首次安装开发工具与依赖：
+
+```sh
+cargo install watchexec-cli --locked
+pnpm --dir web install --frozen-lockfile
+```
+
+一个命令同时启动前后端：
+
+```sh
+pnpm --dir web dev
+```
+
+打开 <http://127.0.0.1:5173>。前端使用 Vite + React Fast Refresh；Rust 修改由 Watchexec 自动重新编译并重启。concurrently 管理两个进程，Ctrl+C 一起停止；任一进程退出也会停止另一进程。Rust 编译错误会保留文件监听，修复后再次自动编译。后端重启期间 SSE 自动重连。
+
+开发后端监听 `0.0.0.0:4319`，网页监听 `0.0.0.0:5173`，Vite 转发 `/api`、SSE 和 `/v1/metrics`。开发数据保存在 `target/dev-data/metrics.sqlite`，开发编译产物在 `target/dev-build/`。与默认 release 端口和数据目录分开，可以同时运行。
+
+开发编译使用 `--no-default-features`，只启动 API 服务，不内嵌前端，也不依赖 `web/dist`。Codex 连接开发环境时使用 `http://127.0.0.1:4319/v1/metrics`；页面的连接命令使用当前网页地址，经 Vite 的 `/v1/metrics` 代理转发，同样能连接开发后端。
+
+### Release：单文件内嵌网页
+
+```sh
+pnpm --dir web build:release
+./target/release/codex-speed
+```
+
+该命令先构建前端，再编译 release Rust 程序。默认启用 `embedded-web` feature，将 `web/dist` 嵌入二进制；运行时不依赖 Vite、Node.js 或磁盘前端文件。release 默认端口仍是 `4318`，数据库使用系统本地数据目录。默认 `cargo run` 同样启用内嵌页面，需要先构建前端；实时开发请用上面的 `dev` 命令。
 
 ```sh
 pnpm --dir web lint
