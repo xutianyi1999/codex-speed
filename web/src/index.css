@@ -27,6 +27,7 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -51,6 +52,7 @@
   --chart-1: #5786dc;
   --chart-2: #46918b;
   --chart-3: #926ac4;
+  --chart-4: #a87734;
   --surface-blue: #eef4ff;
   --surface-green: #edf6f3;
 }
@@ -224,6 +226,7 @@
 }
 .metric-secondary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   margin-top: 12px;

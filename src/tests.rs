@@ -544,3 +544,46 @@ async fn cache_share_requires_complete_counts_and_nonzero_input() {
         );
     }
 }
+
+#[tokio::test]
+async fn reasoning_tokens_are_a_separate_subset_not_added_to_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("test.sqlite")).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    for time in [now - 1000, now] {
+        for (token_type, total) in [("output", 1200.0), ("reasoning_output", 400.0)] {
+            let mut data = export(time, "gpt-reasoning", 1, total, 1);
+            let metric = &mut data["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0];
+            metric["name"] = json!("codex.turn.token_usage");
+            metric["histogram"]["dataPoints"][0]["attributes"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"key":"token_type","value":{"stringValue":token_type}}));
+            assert_eq!(store.ingest(parsed(data), now).await.unwrap(), (1, 0));
+        }
+    }
+    let snap = store
+        .snapshot(60, Some("gpt-reasoning".into()), String::new(), now)
+        .await
+        .unwrap();
+    assert_eq!(snap.summary.output_tokens, Some(2400.0));
+    assert_eq!(snap.summary.reasoning_output_tokens, Some(800.0));
+    assert_eq!(snap.summary.token_samples["reasoning_output"], 2);
+    assert_eq!(
+        snap.trend
+            .iter()
+            .filter_map(|p| p.reasoning_output_tokens)
+            .sum::<f64>(),
+        800.0
+    );
+    assert!(
+        snap.trend
+            .iter()
+            .any(|p| p.reasoning_output_tokens.is_none())
+    );
+    let empty = store
+        .snapshot(60, Some("not-reported".into()), String::new(), now)
+        .await
+        .unwrap();
+    assert!(empty.summary.reasoning_output_tokens.is_none());
+}

@@ -15,12 +15,17 @@ const series = {
   input_tokens: { label: "输入", color: "var(--chart-1)" },
   cached_input_tokens: { label: "缓存输入", color: "var(--chart-2)" },
   output_tokens: { label: "输出", color: "var(--chart-3)" },
+  reasoning_output_tokens: { label: "推理输出", color: "var(--chart-4)" },
 };
 export default function TokenTrend({ data }: { data: Snapshot }) {
   const [selected, setSelected] = useState("all");
   if (
     !data.trend.some(
-      (p) => p.input_tokens != null || p.cached_input_tokens != null || p.output_tokens != null,
+      (p) =>
+        p.input_tokens != null ||
+        p.cached_input_tokens != null ||
+        p.output_tokens != null ||
+        p.reasoning_output_tokens != null,
     )
   ) {
     return (
@@ -113,7 +118,13 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
             type="monotoneX"
             stroke={`var(--color-${key})`}
             strokeWidth={2.2}
-            strokeDasharray={key === "cached_input_tokens" ? "5 3" : undefined}
+            strokeDasharray={
+              key === "cached_input_tokens"
+                ? "5 3"
+                : key === "reasoning_output_tokens"
+                  ? "2 3"
+                  : undefined
+            }
             dot={{ r: 3, strokeWidth: 0, fill: `var(--color-${key})` }}
             activeDot={{ r: 5 }}
             connectNulls

@@ -15,6 +15,7 @@ export interface Summary {
   input_tokens: number | null;
   cached_input_tokens: number | null;
   output_tokens: number | null;
+  reasoning_output_tokens: number | null;
   cached_input_percent: number | null;
   http_attempts: Attempts | null;
   websocket_send_attempts: Attempts | null;
@@ -42,6 +43,7 @@ export interface Snapshot {
     input_tokens: number | null;
     cached_input_tokens: number | null;
     output_tokens: number | null;
+    reasoning_output_tokens: number | null;
     http_failure_percent: number | null;
     websocket_send_failure_percent: number | null;
   }[];
@@ -82,6 +84,10 @@ export function tokens(value: number | null | undefined): string {
 }
 export function seconds(value: number | null | undefined): string {
   return value == null ? "—" : (value / 1000).toFixed(2);
+}
+export function duration(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${value.toFixed(2)} ms`;
 }
 export function rate(value: number | null | undefined): string {
   return value == null ? "—" : value.toFixed(1);

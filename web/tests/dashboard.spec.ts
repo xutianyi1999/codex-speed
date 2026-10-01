@@ -21,6 +21,7 @@ function payload(model: string, time: number, ttft: number, tbt: number) {
     histogram('codex.turn.token_usage', 24000, 'input'),
     histogram('codex.turn.token_usage', 18000, 'cached_input'),
     histogram('codex.turn.token_usage', 1200, 'output'),
+    histogram('codex.turn.token_usage', 800, 'reasoning_output'),
     attempts('codex.api_request', true, 18),
     attempts('codex.api_request', false, 2),
     attempts('codex.websocket.request', true, 99),
@@ -55,6 +56,7 @@ test('setup, live metrics, filters and accessible responsive layout', async ({ p
   await expect(page.locator('.metrics-grid')).toContainText('33.6K')
   await expect(page.locator('.metrics-grid')).toContainText('缓存输入占比 75.0%')
   await expect(page.locator('.metrics-grid')).toContainText('P95')
+  await expect(page.locator('.metrics-grid')).toContainText('推理输出 22.4K')
   const reliability = page.getByRole('region', { name: '请求与发送失败' })
   await expect(reliability).toContainText('10.0%')
   await expect(reliability).toContainText('1.0%')
@@ -64,12 +66,15 @@ test('setup, live metrics, filters and accessible responsive layout', async ({ p
   await expect(usage.getByText('输入', { exact: true })).toBeVisible()
   await expect(usage.getByText('缓存输入', { exact: true })).toBeVisible()
   await expect(usage.getByText('输出', { exact: true })).toBeVisible()
-  await expect(usage.locator('.recharts-line')).toHaveCount(3)
+  await expect(usage.locator('.recharts-line')).toHaveCount(4)
   await usage.getByRole('button', { name: '输出', exact: true }).click()
   await expect(usage.getByRole('button', { name: '输出', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(usage.locator('.recharts-line')).toHaveCount(1)
+  await usage.getByRole('button', { name: '推理输出', exact: true }).click()
+  await expect(usage.getByRole('button', { name: '推理输出', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(usage.locator('.recharts-line')).toHaveCount(1)
   await usage.getByRole('button', { name: '全部', exact: true }).click()
-  await expect(usage.locator('.recharts-line')).toHaveCount(3)
+  await expect(usage.locator('.recharts-line')).toHaveCount(4)
   await page.getByRole('button', { name: '15 分钟', exact: true }).click()
   await expect.poll(async () => page.locator('.metrics-grid').innerText()).not.toContain('28 个有效样本')
   await page.getByRole('button', { name: '1 小时', exact: true }).click()

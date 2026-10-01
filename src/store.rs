@@ -108,6 +108,7 @@ pub struct Summary {
     pub input_tokens: Option<f64>,
     pub cached_input_tokens: Option<f64>,
     pub output_tokens: Option<f64>,
+    pub reasoning_output_tokens: Option<f64>,
     pub cached_input_percent: Option<f64>,
     pub http_attempts: Option<Attempts>,
     pub websocket_send_attempts: Option<Attempts>,
@@ -164,10 +165,11 @@ impl SummaryBuilder {
             input_tokens: tokens("input"),
             cached_input_tokens: tokens("cached_input"),
             output_tokens: tokens("output"),
+            reasoning_output_tokens: tokens("reasoning_output"),
             cached_input_percent,
             http_attempts: attempts("http_success", "http_failed"),
             websocket_send_attempts: attempts("websocket_send_success", "websocket_send_failed"),
-            token_samples: ["input", "cached_input", "output"]
+            token_samples: ["input", "cached_input", "output", "reasoning_output"]
                 .into_iter()
                 .filter_map(|k| self.metrics.get(k).map(|m| (k.to_owned(), m.count)))
                 .collect(),
@@ -199,6 +201,7 @@ pub struct TrendPoint {
     pub input_tokens: Option<f64>,
     pub cached_input_tokens: Option<f64>,
     pub output_tokens: Option<f64>,
+    pub reasoning_output_tokens: Option<f64>,
     pub http_failure_percent: Option<f64>,
     pub websocket_send_failure_percent: Option<f64>,
 }
@@ -427,6 +430,7 @@ impl Store {
                     input_tokens: value.input_tokens,
                     cached_input_tokens: value.cached_input_tokens,
                     output_tokens: value.output_tokens,
+                    reasoning_output_tokens: value.reasoning_output_tokens,
                     http_failure_percent: value.http_attempts.map(|m| m.failure_percent),
                     websocket_send_failure_percent: value
                         .websocket_send_attempts

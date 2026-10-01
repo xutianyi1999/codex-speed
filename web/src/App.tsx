@@ -60,7 +60,16 @@ import {
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { clock, percent, rate, type Snapshot, seconds, tokens, useMetrics } from "@/lib/api";
+import {
+  clock,
+  duration,
+  percent,
+  rate,
+  type Snapshot,
+  seconds,
+  tokens,
+  useMetrics,
+} from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 
 const Trend = lazy(() => import("@/components/trend"));
@@ -140,8 +149,8 @@ function Setup({ endpoint, children }: { endpoint: string; children?: React.Reac
 function Details({ data }: { data: Snapshot }) {
   const summary = data.summary;
   const names: Record<string, string> = {
-    engine: "Engine 耗时",
-    overhead: "服务端额外耗时",
+    engine: "引擎服务耗时（Inference）",
+    overhead: "API 额外耗时（Overhead）",
     iapi_ttft: "IAPI TTFT",
     iapi_tbt: "IAPI TBT",
   };
@@ -171,7 +180,8 @@ function Details({ data }: { data: Snapshot }) {
             <dt>Token 用量</dt>
             <dd>
               原生 turn.token_usage
-              的报告总量。输入包含缓存输入，两者不相加。不同字段分别统计，缺失不补零。
+              的报告总量。输入包含缓存输入，输出包含推理输出，均不能重复相加。推理输出为模型内部推理所用
+              tokens，不是可见回答长度。不同字段分别统计，缺失不补零。
             </dd>
           </div>
           <div>
@@ -195,7 +205,7 @@ function Details({ data }: { data: Snapshot }) {
           </div>
         </dl>
         <p className="text-sm text-muted-foreground">
-          TTFT P50 {seconds(summary.ttft.p50_ms)} s · P95 {seconds(summary.ttft.p95_ms)} s
+          TTFT P50 {duration(summary.ttft.p50_ms)} · P95 {duration(summary.ttft.p95_ms)}
           {summary.ttft.quantiles_approximate ? "（直方图估算）" : ""}
         </p>
         <Table>
@@ -203,7 +213,7 @@ function Details({ data }: { data: Snapshot }) {
           <TableHeader>
             <TableRow>
               <TableHead scope="col">指标</TableHead>
-              <TableHead scope="col">平均</TableHead>
+              <TableHead scope="col">窗口平均</TableHead>
               <TableHead scope="col">样本</TableHead>
             </TableRow>
           </TableHeader>
@@ -216,11 +226,7 @@ function Details({ data }: { data: Snapshot }) {
             ].map(([name, value]) => (
               <TableRow key={String(name)}>
                 <TableCell>{String(name)}</TableCell>
-                <TableCell>
-                  {typeof value !== "string" && value.mean_ms != null
-                    ? `${value.mean_ms.toFixed(2)} ms`
-                    : "—"}
-                </TableCell>
+                <TableCell>{typeof value !== "string" ? duration(value.mean_ms) : "—"}</TableCell>
                 <TableCell>{typeof value !== "string" ? value.samples : "—"}</TableCell>
               </TableRow>
             ))}
@@ -417,6 +423,7 @@ export default function App() {
               <CardAction>
                 <Hint label="Token 用量说明">
                   主数值为输出 tokens 的累计上报总量。输入包含缓存输入，不能相加。
+                  推理输出已包含在输出总量中，缺失时显示 —，不能视为零。
                   缓存输入占比为窗口缓存输入总量 ÷
                   输入总量，不是请求缓存命中率；报告数量不一致时不显示。 各字段分别统计，缺失显示
                   —，不补零。
@@ -435,6 +442,9 @@ export default function App() {
               <div className="metric-secondary">
                 <span className="metric-stat">
                   缓存输入占比 <strong>{percent(summary?.cached_input_percent)}</strong>
+                </span>
+                <span className="metric-stat">
+                  推理输出 <strong>{tokens(summary?.reasoning_output_tokens)}</strong>
                 </span>
               </div>
             </CardContent>
@@ -487,7 +497,7 @@ export default function App() {
           <div className="section-heading">
             <div>
               <h2>Token 用量趋势</h2>
-              <p>点表示桶内累计上报用量，输入包含缓存输入；点击图例单独查看，连线仅展示趋势。</p>
+              <p>输入包含缓存输入，输出包含推理输出；点为桶内累计上报用量，点击图例单独查看。</p>
             </div>
             <span className="text-xs text-muted-foreground">tokens</span>
           </div>
