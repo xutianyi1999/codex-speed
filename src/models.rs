@@ -9,6 +9,11 @@ pub struct ModelStats<'a> {
     pub completed: usize,
     pub unfinished: usize,
     pub excluded: usize,
+    pub failed: usize,
+    pub interrupted: usize,
+    pub latest_completed_at: Option<DateTime<Utc>>,
+    pub latest_output_tps: Option<f64>,
+    pub latest_first_output_ms: Option<u64>,
     pub tps_samples: usize,
     pub visible_tps_samples: usize,
     pub latency_samples: usize,
@@ -60,7 +65,13 @@ pub fn summarize<'a>(
             for values in [&mut output, &mut visible, &mut latency] {
                 values.sort_by(f64::total_cmp);
             }
+            let latest = completed.first();
             ModelStats {
+                failed: turns.iter().filter(|t| t.status == "failed").count(),
+                interrupted: turns.iter().filter(|t| t.status == "interrupted").count(),
+                latest_completed_at: latest.and_then(|t| t.finished_at),
+                latest_output_tps: latest.and_then(|t| t.average_tps()),
+                latest_first_output_ms: latest.and_then(|t| t.first_output_ms),
                 completed: completed.len(),
                 unfinished: turns.iter().filter(|t| t.status == "running").count(),
                 excluded: turns
@@ -168,5 +179,30 @@ mod tests {
         assert_eq!(models[0].completed, 1);
         assert_eq!(models[0].latency_samples, 0);
         assert_eq!(models[0].output_tps_p50, None);
+    }
+
+    #[test]
+    fn latest_sample_is_completed_not_the_newer_failed_or_running_turn() {
+        let mut s = Session::new("sample.jsonl".into());
+        for (id, status, timestamp) in [
+            ("done", "task_complete", "2026-10-01T06:00:00Z"),
+            ("failed", "task_complete", "2026-10-01T07:00:00Z"),
+            ("open", "task_started", "2026-10-01T08:00:00Z"),
+        ] {
+            feed(&mut s, "turn_context", json!({"turn_id":id,"model":"a"}));
+            s.ingest(&serde_json::to_vec(&json!({"timestamp":timestamp,"type":"event_msg",
+                "payload":{"type":status,"turn_id":id,"duration_ms":1000,
+                    "time_to_first_token_ms":123,"error":if id == "failed" {json!("error")} else {json!(null)}}})).unwrap());
+        }
+        let stats = summarize(&[&s], None);
+        assert_eq!(stats[0].completed, 1);
+        assert_eq!(stats[0].failed, 1);
+        assert_eq!(stats[0].unfinished, 1);
+        assert_eq!(stats[0].latest_first_output_ms, Some(123));
+        assert_eq!(
+            stats[0].latest_completed_at.unwrap().to_rfc3339(),
+            "2026-10-01T06:00:00+00:00"
+        );
+        assert_eq!(stats[0].latest_output_tps, None);
     }
 }

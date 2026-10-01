@@ -91,9 +91,11 @@ fn run(
     monitor: &mut Monitor,
     rx: &mpsc::Receiver<()>,
     demo: bool,
-    hours: u32,
+    mut hours: u32,
 ) -> Result<()> {
     let mut selected = 0;
+    let mut selected_model: Option<String> = None;
+    let mut turn_offset: usize = 0;
     let mut refreshed = Instant::now();
     loop {
         let changed = rx.try_recv().is_ok();
@@ -104,8 +106,19 @@ fn run(
             refreshed = Instant::now();
         }
         let models = monitor.models(hours);
+        if let Some(index) = selected_model
+            .as_ref()
+            .and_then(|name| models.iter().position(|m| &m.model == name))
+        {
+            selected = index;
+        }
         selected = selected.min(models.len().saturating_sub(1));
-        terminal.draw(|frame| ui::draw(frame, monitor, &models, selected, hours))?;
+        turn_offset = turn_offset.min(
+            models
+                .get(selected)
+                .map_or(0, |m| m.turns.len().saturating_sub(1)),
+        );
+        terminal.draw(|frame| ui::draw(frame, monitor, &models, selected, hours, turn_offset))?;
         if event::poll(Duration::from_millis(200))?
             && let Event::Key(key) = event::read()?
         {
@@ -116,12 +129,34 @@ fn run(
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Down | KeyCode::Char('j') => {
-                    selected = (selected + 1).min(models.len().saturating_sub(1))
+                    selected = (selected + 1).min(models.len().saturating_sub(1));
+                    turn_offset = 0;
                 }
-                KeyCode::Up | KeyCode::Char('k') => selected = selected.saturating_sub(1),
-                KeyCode::Char('r') if !demo => monitor.refresh()?,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    selected = selected.saturating_sub(1);
+                    turn_offset = 0;
+                }
+                KeyCode::PageDown => turn_offset = turn_offset.saturating_add(10),
+                KeyCode::PageUp => turn_offset = turn_offset.saturating_sub(10),
+                KeyCode::Home => turn_offset = 0,
+                KeyCode::Char(c @ ('1' | '2' | '3' | '4')) => {
+                    hours = match c {
+                        '1' => 1,
+                        '2' => 24,
+                        '3' => 168,
+                        _ => 0,
+                    };
+                    turn_offset = 0;
+                }
+                KeyCode::Char('r') if !demo => {
+                    selected_model = models.get(selected).map(|m| m.model.clone());
+                    drop(models);
+                    monitor.refresh()?;
+                    continue;
+                }
                 _ => {}
             }
+            selected_model = models.get(selected).map(|m| m.model.clone());
         }
     }
     Ok(())

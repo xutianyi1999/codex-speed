@@ -22,7 +22,11 @@ codex-speed
 ```
 
 按 `↑/↓` 或 `j/k` 选择模型，下方查看该模型的最近轮次。`r` 刷新，
-`q`、`Esc` 或 `Ctrl+C` 退出。
+`q`、`Esc` 或 `Ctrl+C` 退出。`1/2/3/4` 切换最近 1 小时、24 小时、7 天、全部已加载历史。
+`PgUp/PgDn` 滚动轮次，`Home` 回到最新记录；切换模型或窗口后回到列表顶部。
+模型表按数量自动调整高度，宽终端增加 Open、Fail、Last TPS、Last First 列。
+模型详情显示最新成功轮次的指标和时间、各项有效样本数、未完成/失败/中断数量。
+首输出延迟样本少于 20 时提示小样本，P95 应谨慎解读；Open 仅表示缺少结束事件。
 轮次时间按运行机器的本地时区显示（遵循系统时区或 `TZ` 环境变量）；JSON 时间保留 UTC。
 
 ## 指标口径
@@ -31,7 +35,7 @@ codex-speed
 | --- | --- |
 | First P50 / P95 | 首输出延迟的中位数 / 第 95 百分位。来自 `time_to_first_token_ms`，包括首次推理或工具输出，不等于首段可见文字时间。 |
 | TPS P50 | 各轮 `output_tokens / duration_ms` 的中位数，包含推理、工具执行和等待。 |
-| Text P50 | 各轮 `(output_tokens - reasoning_output_tokens) / duration_ms` 的中位数；分母仍是整轮耗时，输出也可能包含工具参数。 |
+| Non-R P50 | 各轮 `(output_tokens - reasoning_output_tokens) / duration_ms` 的中位数；分母仍是整轮耗时，输出也可能包含工具参数。 |
 | Done | 时间窗口内完成的轮次数；每项指标的有效样本数显示在下方面板标题中。 |
 | Duration | Codex 保存的整轮毫秒耗时，不使用文件修改时间估算。 |
 | Output | 模型报告的整轮 output tokens，包含 reasoning tokens。 |

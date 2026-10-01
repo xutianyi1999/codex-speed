@@ -76,6 +76,7 @@ pub struct Monitor {
     pub home: PathBuf,
     pub warning: Option<String>,
     pub demo_mode: bool,
+    pub last_refresh: Option<chrono::DateTime<chrono::Utc>>,
     limit: usize,
     files: HashMap<PathBuf, Tail>,
 }
@@ -86,6 +87,7 @@ impl Monitor {
             home,
             warning: None,
             demo_mode: false,
+            last_refresh: None,
             limit,
             files: HashMap::new(),
         }
@@ -159,7 +161,11 @@ impl Monitor {
         }
         self.files.retain(|path, _| keep.contains(path));
         self.warning = errors.into_iter().next();
+        self.last_refresh = Some(chrono::Utc::now());
         Ok(())
+    }
+    pub fn file_limit(&self) -> usize {
+        self.limit
     }
     pub fn sessions(&self) -> Vec<&Session> {
         let mut sessions: Vec<_> = self.files.values().map(|tail| &tail.session).collect();
@@ -199,6 +205,7 @@ impl Monitor {
     }
     pub fn demo(&mut self) {
         self.demo_mode = true;
+        self.last_refresh = Some(chrono::Utc::now());
         for (i, project) in ["my-project", "api-server"].iter().enumerate() {
             let path = PathBuf::from(format!("demo-{i}.jsonl"));
             let mut tail = Tail::new(path.clone());
