@@ -410,7 +410,7 @@ export default function App() {
           <div className="section-heading">
             <div>
               <h2>近期趋势</h2>
-              <p>按时间分桶的平均值，空白表示没有数据。</p>
+              <p>点表示时间桶内的平均值；连线仅展示趋势，空档没有观测。</p>
             </div>
             {data && <Details data={data} />}
           </div>
@@ -449,7 +449,7 @@ export default function App() {
           <div className="section-heading">
             <div>
               <h2>Token 用量趋势</h2>
-              <p>每个时间桶内的用量合计，输入包含缓存输入；空白表示没有数据。</p>
+              <p>点表示收到的用量合计，输入包含缓存输入；点击图例单独查看，连线仅展示趋势。</p>
             </div>
             <span className="text-xs text-muted-foreground">tokens</span>
           </div>

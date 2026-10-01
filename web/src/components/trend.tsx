@@ -1,5 +1,5 @@
 import { ActivityIcon } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import TokenTrend from "@/components/token-trend";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
@@ -39,7 +39,7 @@ export default function Trend({
         },
       }}
     >
-      <AreaChart
+      <LineChart
         accessibilityLayer
         data={values}
         margin={{ left: 0, right: 8, top: 12, bottom: 0 }}
@@ -80,19 +80,17 @@ export default function Trend({
             />
           }
         />
-        <Area
-          type="linear"
+        <Line
+          type="monotoneX"
           dataKey="value"
           stroke="var(--color-value)"
-          fill="var(--color-value)"
-          fillOpacity={0.07}
           strokeWidth={2.4}
-          dot={{ r: 2, fill: "var(--color-value)", strokeWidth: 0 }}
+          dot={{ r: 3, fill: "var(--color-value)", strokeWidth: 0 }}
           activeDot={{ r: 5 }}
-          connectNulls={false}
+          connectNulls
           isAnimationActive={false}
         />
-      </AreaChart>
+      </LineChart>
     </ChartContainer>
   );
 }

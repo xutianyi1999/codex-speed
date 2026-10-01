@@ -1,13 +1,14 @@
 import { ActivityIcon } from "lucide-react";
+import { useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { clock, type Snapshot, tokens } from "@/lib/api";
 
 const series = {
@@ -16,6 +17,7 @@ const series = {
   output_tokens: { label: "输出", color: "var(--chart-3)" },
 };
 export default function TokenTrend({ data }: { data: Snapshot }) {
+  const [selected, setSelected] = useState("all");
   if (
     !data.trend.some(
       (p) => p.input_tokens != null || p.cached_input_tokens != null || p.output_tokens != null,
@@ -45,7 +47,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
           type="number"
           domain={["dataMin", "dataMax"]}
           tickFormatter={(v) =>
-            new Date(v).toLocaleTimeString("zh-CN", {
+            new Date(Number(v)).toLocaleTimeString("zh-CN", {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
@@ -78,18 +80,43 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
             />
           }
         />
-        <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
+        <ChartLegend
+          content={
+            <ToggleGroup
+              aria-label="显示的 Token 用量"
+              className="token-legend mx-auto"
+              size="sm"
+              value={[selected]}
+              onValueChange={(value) => {
+                if (value[0]) setSelected(value[0]);
+              }}
+            >
+              <ToggleGroupItem value="all">全部</ToggleGroupItem>
+              {Object.entries(series).map(([key, { label, color }]) => (
+                <ToggleGroupItem key={key} value={key}>
+                  <span
+                    aria-hidden="true"
+                    className="size-2 shrink-0 rounded-xs"
+                    style={{ backgroundColor: color }}
+                  />
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          }
+        />
         {Object.keys(series).map((key) => (
           <Line
             key={key}
             dataKey={key}
-            type="linear"
+            hide={selected !== "all" && selected !== key}
+            type="monotoneX"
             stroke={`var(--color-${key})`}
-            strokeWidth={2}
-            strokeDasharray={key === "cached_input_tokens" ? "4 4" : undefined}
-            dot={{ r: 2, strokeWidth: 0, fill: `var(--color-${key})` }}
+            strokeWidth={2.2}
+            strokeDasharray={key === "cached_input_tokens" ? "5 3" : undefined}
+            dot={{ r: 3, strokeWidth: 0, fill: `var(--color-${key})` }}
             activeDot={{ r: 5 }}
-            connectNulls={false}
+            connectNulls
             isAnimationActive={false}
           />
         ))}
