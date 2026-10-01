@@ -65,34 +65,36 @@ pub fn router(state: AppState) -> Router {
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .layer(RequestDecompressionLayer::new())
         .layer(CompressionLayer::new())
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            local_request,
-        ))
+        .layer(axum::middleware::from_fn(same_origin_request))
         .with_state(state)
 }
 
-async fn local_request(
-    State(state): State<AppState>,
+async fn same_origin_request(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    let base = state.endpoint.trim_end_matches("/v1/metrics");
-    let host = base.trim_start_matches("http://");
-    let localhost = host.replacen("127.0.0.1", "localhost", 1);
-    if request
+    let Some(host) = request
         .headers()
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
-        .is_none_or(|h| h != host && h != localhost)
-    {
-        return (StatusCode::FORBIDDEN, "Use the local dashboard address").into_response();
+    else {
+        return (StatusCode::BAD_REQUEST, "Missing Host header").into_response();
+    };
+    if host.parse::<axum::http::uri::Authority>().is_err() {
+        return (StatusCode::BAD_REQUEST, "Invalid Host header").into_response();
     }
-    if request
-        .headers()
-        .get(header::ORIGIN)
-        .is_some_and(|origin| origin != base && origin != format!("http://{localhost}").as_str())
-    {
+    if request.headers().get(header::ORIGIN).is_some_and(|origin| {
+        origin
+            .to_str()
+            .ok()
+            .and_then(|value| value.parse::<Uri>().ok())
+            .is_none_or(|uri| {
+                !matches!(uri.scheme_str(), Some("http" | "https"))
+                    || uri
+                        .authority()
+                        .is_none_or(|authority| !authority.as_str().eq_ignore_ascii_case(host))
+            })
+    }) {
         return (
             StatusCode::FORBIDDEN,
             "Cross-origin requests are not accepted",
@@ -181,6 +183,7 @@ fn default_minutes() -> u32 {
 async fn snapshot(
     State(state): State<AppState>,
     Query(filter): Query<Filter>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     if ![15, 60, 1440, 10080].contains(&filter.minutes)
         || filter.model.as_ref().is_some_and(|m| m.len() > 256)
@@ -195,7 +198,19 @@ async fn snapshot(
         .snapshot(
             filter.minutes,
             filter.model,
-            state.endpoint,
+            headers
+                .get(header::HOST)
+                .and_then(|h| h.to_str().ok())
+                .map(|host| {
+                    let scheme = headers
+                        .get(header::ORIGIN)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|origin| origin.parse::<Uri>().ok())
+                        .and_then(|uri| uri.scheme_str().map(str::to_owned))
+                        .unwrap_or_else(|| "http".into());
+                    format!("{scheme}://{host}/v1/metrics")
+                })
+                .unwrap_or(state.endpoint),
             chrono::Utc::now().timestamp_millis(),
         )
         .await

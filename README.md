@@ -74,10 +74,11 @@ SQLite stores supported histogram points for seven days in the platform's local 
 
 | Option | Default |
 | --- | --- |
+| `--host IP` | `0.0.0.0` |
 | `--port PORT` | `4318` |
 | `--data-dir PATH` | Platform local data directory / `codex-speed` |
 
-The listener is bound to IPv4 loopback only. Update Codex's exporter endpoint if you change the port. HTTP OTLP JSON and protobuf, including gzip requests, are supported. Delta exports are deduplicated. Cumulative exports establish a baseline first, then record increments; the baseline is persisted to avoid counting old history after a restart. Histogram flags, bucket consistency and timing ranges are validated. Old records are removed during ingestion or snapshot refresh.
+The listener defaults to `0.0.0.0`; other computers can visit `http://<server IP>:4318`. Use `--host 127.0.0.1` for local-only access. Remote Codex exporters should use the server IP; the connection dialog uses the current dashboard address. There is no login authentication; access is controlled by the network and firewall. Update Codex's exporter endpoint if you change the port. HTTP OTLP JSON and protobuf, including gzip requests, are supported. Delta exports are deduplicated. Cumulative exports establish a baseline first, then record increments; the baseline is persisted to avoid counting old history after a restart. Histogram flags, bucket consistency and timing ranges are validated. Old records are removed during ingestion or snapshot refresh.
 
 ## Development
 

@@ -238,6 +238,17 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
     let value: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(value["summary"]["ttft"]["mean_ms"], 3306.0);
     let request = Request::builder()
+        .uri("/api/snapshot")
+        .header("host", "192.168.1.10:4318")
+        .header("origin", "http://192.168.1.10:4318")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1000000).await.unwrap();
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value["endpoint"], "http://192.168.1.10:4318/v1/metrics");
+    let request = Request::builder()
         .uri("/")
         .header("host", "127.0.0.1:4318")
         .body(Body::empty())
@@ -248,7 +259,8 @@ async fn http_ingestion_embedded_page_and_origin_guard() {
     assert!(String::from_utf8_lossy(&html).contains("Codex Speed"));
     let request = Request::builder()
         .uri("/api/snapshot")
-        .header("host", "attacker.example")
+        .header("host", "192.168.1.10:4318")
+        .header("origin", "http://attacker.example")
         .body(Body::empty())
         .unwrap();
     assert_eq!(
