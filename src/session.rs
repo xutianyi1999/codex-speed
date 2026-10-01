@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-const HISTORY_LIMIT: usize = 100;
+pub const HISTORY_LIMIT: usize = 100;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Usage {
@@ -70,6 +70,7 @@ pub struct Session {
     pub updated_at: Option<DateTime<Utc>>,
     pub turns: VecDeque<Turn>,
     pub malformed_lines: usize,
+    pub dropped_turns: usize,
     #[serde(skip)]
     legacy_total: Usage,
 }
@@ -85,6 +86,7 @@ impl Session {
             updated_at: None,
             turns: VecDeque::new(),
             malformed_lines: 0,
+            dropped_turns: 0,
             legacy_total: Usage::default(),
         }
     }
@@ -101,6 +103,7 @@ impl Session {
         }
         if self.turns.len() >= HISTORY_LIMIT {
             self.turns.pop_front();
+            self.dropped_turns += 1;
         }
         self.turns.push_back(Turn {
             id: id.to_owned(),

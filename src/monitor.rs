@@ -78,6 +78,7 @@ pub struct Monitor {
     pub demo_mode: bool,
     pub last_refresh: Option<chrono::DateTime<chrono::Utc>>,
     limit: usize,
+    pub skipped_files: usize,
     files: HashMap<PathBuf, Tail>,
 }
 
@@ -89,6 +90,7 @@ impl Monitor {
             demo_mode: false,
             last_refresh: None,
             limit,
+            skipped_files: 0,
             files: HashMap::new(),
         }
     }
@@ -127,10 +129,8 @@ impl Monitor {
         candidates.sort_unstable_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         let mut keep = HashSet::new();
         let mut seen_ids = HashSet::new();
+        self.skipped_files = 0;
         for (_, path) in candidates {
-            if keep.len() >= self.limit {
-                break;
-            }
             if !self.files.contains_key(&path) {
                 match supported_header(&path) {
                     Ok(true) => {}
@@ -140,6 +140,10 @@ impl Monitor {
                         continue;
                     }
                 }
+            }
+            if self.limit > 0 && keep.len() >= self.limit {
+                self.skipped_files += 1;
+                continue;
             }
             let tail = self
                 .files
@@ -164,9 +168,6 @@ impl Monitor {
         self.last_refresh = Some(chrono::Utc::now());
         Ok(())
     }
-    pub fn file_limit(&self) -> usize {
-        self.limit
-    }
     pub fn sessions(&self) -> Vec<&Session> {
         let mut sessions: Vec<_> = self.files.values().map(|tail| &tail.session).collect();
         sessions.sort_by(|a, b| {
@@ -179,7 +180,19 @@ impl Monitor {
     pub fn models(&self, hours: u32) -> Vec<crate::models::ModelStats<'_>> {
         let since =
             (hours > 0).then(|| chrono::Utc::now() - chrono::Duration::hours(i64::from(hours)));
-        crate::models::summarize(&self.sessions(), since)
+        let mut models: Vec<_> = crate::models::summarize(&self.sessions(), since)
+            .into_iter()
+            .filter(|m| m.model != "unknown" || m.completed > 0)
+            .collect();
+        models.sort_by(|a, b| {
+            let newest = |m: &crate::models::ModelStats<'_>| {
+                m.turns.first().and_then(|t| t.finished_at.or(t.started_at))
+            };
+            newest(b)
+                .cmp(&newest(a))
+                .then_with(|| a.model.cmp(&b.model))
+        });
+        models
     }
     pub fn snapshot(&self, hours: u32) -> Value {
         json!({
@@ -189,10 +202,13 @@ impl Monitor {
             "demo": self.demo_mode,
             "warning": self.warning,
             "window_hours": hours,
+            "skipped_files": self.skipped_files,
+            "dropped_turns": self.sessions().iter().map(|s| s.dropped_turns).sum::<usize>(),
+            "partial_data": self.skipped_files > 0 || self.warning.is_some() || self.sessions().iter().any(|s| s.malformed_lines > 0 || s.dropped_turns > 0),
             "models": self.models(hours),
             "sessions": self.sessions().into_iter().map(|s| json!({
                 "id": s.id, "cwd": s.cwd, "source": s.source, "model": s.model,
-                "path": s.path, "updated_at": s.updated_at, "malformed_lines": s.malformed_lines,
+                "path": s.path, "updated_at": s.updated_at, "malformed_lines": s.malformed_lines, "dropped_turns": s.dropped_turns,
                 "turns": s.turns.iter().map(|t| json!({
                     "id": t.id, "model": t.model, "status": t.status, "started_at": t.started_at,
                     "finished_at": t.finished_at,
@@ -313,5 +329,47 @@ mod tests {
         assert!(monitor.sessions().iter().all(|s| s.is_supported_source()));
         monitor.refresh().unwrap();
         assert_eq!(monitor.sessions().len(), 3);
+    }
+
+    #[test]
+    fn reports_file_and_turn_caps_without_silent_data_loss() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("sessions");
+        fs::create_dir(&root).unwrap();
+        for i in 0..3 {
+            let mut file = File::create(root.join(format!("{i}.jsonl"))).unwrap();
+            writeln!(
+                file,
+                "{}",
+                json!({"type":"session_meta","payload":{"id":i.to_string(),"source":"cli"}})
+            )
+            .unwrap();
+            for turn in 0..105 {
+                writeln!(
+                    file,
+                    "{}",
+                    json!({"timestamp":chrono::Utc::now().to_rfc3339(),"type":"event_msg",
+                    "payload":{"type":"task_complete","turn_id":turn.to_string()}})
+                )
+                .unwrap();
+            }
+        }
+        let mut monitor = Monitor::new(dir.path().to_owned(), 0);
+        monitor.refresh().unwrap();
+        assert_eq!(monitor.sessions().len(), 3);
+        assert!(
+            monitor
+                .sessions()
+                .iter()
+                .all(|s| s.turns.len() == 100 && s.dropped_turns == 5)
+        );
+        assert_eq!(monitor.skipped_files, 0);
+        assert_eq!(monitor.snapshot(24)["partial_data"], true);
+        assert_eq!(monitor.snapshot(24)["dropped_turns"], 15);
+        let mut capped = Monitor::new(dir.path().to_owned(), 2);
+        capped.refresh().unwrap();
+        assert_eq!(capped.sessions().len(), 2);
+        assert_eq!(capped.skipped_files, 1);
+        assert_eq!(capped.snapshot(24)["partial_data"], true);
     }
 }

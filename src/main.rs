@@ -23,8 +23,8 @@ struct Args {
     /// Codex home containing sessions/ and archived_sessions/.
     #[arg(long, env = "CODEX_HOME")]
     codex_home: Option<PathBuf>,
-    /// Maximum number of recently modified session files to load.
-    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=1000))]
+    /// Maximum session files to load; 0 loads all supported logs.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(0..=10000))]
     limit: u32,
     /// Include turns finished in the last N hours; 0 includes all loaded history.
     #[arg(long, default_value_t = 24, value_parser = clap::value_parser!(u32).range(0..=8760))]
@@ -47,6 +47,9 @@ fn main() -> Result<()> {
     if args.demo {
         monitor.demo();
     } else {
+        if !args.json {
+            eprintln!("Loading Codex logs from {} …", home.display());
+        }
         monitor.refresh()?;
     }
     if args.json {
@@ -94,6 +97,7 @@ fn run(
     mut hours: u32,
 ) -> Result<()> {
     let mut selected = 0;
+    let mut show_charts = true;
     let mut selected_model: Option<String> = None;
     let mut turn_offset: usize = 0;
     let mut refreshed = Instant::now();
@@ -118,7 +122,17 @@ fn run(
                 .get(selected)
                 .map_or(0, |m| m.turns.len().saturating_sub(1)),
         );
-        terminal.draw(|frame| ui::draw(frame, monitor, &models, selected, hours, turn_offset))?;
+        terminal.draw(|frame| {
+            ui::draw(
+                frame,
+                monitor,
+                &models,
+                selected,
+                hours,
+                turn_offset,
+                show_charts,
+            )
+        })?;
         if event::poll(Duration::from_millis(200))?
             && let Event::Key(key) = event::read()?
         {
@@ -139,6 +153,7 @@ fn run(
                 KeyCode::PageDown => turn_offset = turn_offset.saturating_add(10),
                 KeyCode::PageUp => turn_offset = turn_offset.saturating_sub(10),
                 KeyCode::Home => turn_offset = 0,
+                KeyCode::Char('c') => show_charts = !show_charts,
                 KeyCode::Char(c @ ('1' | '2' | '3' | '4')) => {
                     hours = match c {
                         '1' => 1,
