@@ -4,9 +4,11 @@
 
 监控 Codex 原生 OpenTelemetry metrics 的本地网页工具。前端嵌入 Rust 可执行文件，运行时不需要 Node.js、独立前端文件或远程服务器。
 
-![白底浅色网页监控界面，使用合成预览数据](docs/assets/web-desktop.png)
+![白底浅色网页监控界面，使用合成预览数据](docs/assets/web-desktop-zh-CN.png)
 
 *截图使用测试合成数据。*
+
+界面支持简体中文和英文，使用 i18next 和 react-i18next。右上角可以切换语言，选择会保存在当前浏览器中。首次访问按浏览器语言选择，不支持的语言回退为英文。译文随前端嵌入可执行文件。
 
 ## 构建与启动
 

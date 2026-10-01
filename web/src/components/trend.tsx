@@ -1,10 +1,11 @@
 import { ActivityIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import ReliabilityTrend from "@/components/reliability-trend";
 import TokenTrend from "@/components/token-trend";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
-import { clock, type Snapshot } from "@/lib/api";
+import { clock, type Snapshot, timeTick } from "@/lib/api";
 export default function Trend({
   data,
   metric,
@@ -12,6 +13,7 @@ export default function Trend({
   data: Snapshot;
   metric: "ttft_ms" | "decode_tps" | "tokens" | "reliability";
 }) {
+  const { t } = useTranslation();
   if (metric === "tokens") return <TokenTrend data={data} />;
   if (metric === "reliability") return <ReliabilityTrend data={data} />;
   const latency = metric === "ttft_ms";
@@ -27,7 +29,7 @@ export default function Trend({
           <EmptyMedia variant="icon">
             <ActivityIcon />
           </EmptyMedia>
-          <EmptyDescription>等待{latency ? "首 token" : "Decode"}计时数据</EmptyDescription>
+          <EmptyDescription>{t(latency ? "waiting_ttft" : "waiting_decode")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -36,7 +38,7 @@ export default function Trend({
       className="trend-chart"
       config={{
         value: {
-          label: latency ? "首 token 延迟" : "估算 Decode 吞吐",
+          label: latency ? t("ttft") : t("decode_estimated"),
           color: latency ? "var(--chart-1)" : "var(--chart-2)",
         },
       }}
@@ -51,13 +53,7 @@ export default function Trend({
           dataKey="time_ms"
           type="number"
           domain={["dataMin", "dataMax"]}
-          tickFormatter={(v) =>
-            new Date(v).toLocaleTimeString("zh-CN", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          }
+          tickFormatter={timeTick}
           tickLine={false}
           axisLine={false}
           minTickGap={45}

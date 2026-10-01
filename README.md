@@ -4,9 +4,11 @@
 
 A local web dashboard for Codex's native OpenTelemetry metrics. The frontend is embedded in the Rust executable: no Node.js, frontend directory, or remote server is needed at runtime.
 
-![Light web dashboard with synthetic preview metrics](docs/assets/web-desktop.png)
+![Light web dashboard with synthetic preview metrics](docs/assets/web-desktop-en.png)
 
 *Preview uses synthetic test data.*
+
+The interface supports English and Simplified Chinese, using i18next and react-i18next. Select a language in the top-right corner; your choice is saved in this browser. The first visit follows the browser language, with English as the fallback. Translations are bundled into the executable.
 
 ## Build and start
 

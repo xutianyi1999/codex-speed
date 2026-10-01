@@ -1,5 +1,6 @@
 import { ActivityIcon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
@@ -9,15 +10,16 @@ import {
 } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { clock, type Snapshot, tokens } from "@/lib/api";
+import { clock, type Snapshot, timeTick, tokens } from "@/lib/api";
 
-const series = {
-  input_tokens: { label: "输入", color: "var(--chart-1)" },
-  cached_input_tokens: { label: "缓存输入", color: "var(--chart-2)" },
-  output_tokens: { label: "输出", color: "var(--chart-3)" },
-  reasoning_output_tokens: { label: "推理输出", color: "var(--chart-4)" },
-};
 export default function TokenTrend({ data }: { data: Snapshot }) {
+  const { t } = useTranslation();
+  const series = {
+    input_tokens: { label: t("input"), color: "var(--chart-1)" },
+    cached_input_tokens: { label: t("cached_input"), color: "var(--chart-2)" },
+    output_tokens: { label: t("output"), color: "var(--chart-3)" },
+    reasoning_output_tokens: { label: t("reasoning_output"), color: "var(--chart-4)" },
+  };
   const [selected, setSelected] = useState("all");
   if (
     !data.trend.some(
@@ -34,7 +36,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
           <EmptyMedia variant="icon">
             <ActivityIcon />
           </EmptyMedia>
-          <EmptyDescription>等待 token 用量数据</EmptyDescription>
+          <EmptyDescription>{t("waiting_tokens")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -51,13 +53,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
           dataKey="time_ms"
           type="number"
           domain={["dataMin", "dataMax"]}
-          tickFormatter={(v) =>
-            new Date(Number(v)).toLocaleTimeString("zh-CN", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          }
+          tickFormatter={timeTick}
           tickLine={false}
           axisLine={false}
           minTickGap={45}
@@ -88,7 +84,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
         <ChartLegend
           content={
             <ToggleGroup
-              aria-label="显示的 Token 用量"
+              aria-label={t("shown_tokens")}
               className="token-legend mx-auto"
               size="sm"
               value={[selected]}
@@ -96,7 +92,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
                 if (value[0]) setSelected(value[0]);
               }}
             >
-              <ToggleGroupItem value="all">全部</ToggleGroupItem>
+              <ToggleGroupItem value="all">{t("all")}</ToggleGroupItem>
               {Object.entries(series).map(([key, { label, color }]) => (
                 <ToggleGroupItem key={key} value={key}>
                   <span

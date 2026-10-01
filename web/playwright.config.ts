@@ -9,7 +9,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: 'list',
-  use: { reducedMotion: 'reduce', baseURL: 'http://127.0.0.1:14318', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: { locale: 'zh-CN', reducedMotion: 'reduce', baseURL: 'http://127.0.0.1:14318', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1040 } } },
     { name: 'laptop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } } },

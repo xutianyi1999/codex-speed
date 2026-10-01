@@ -5,6 +5,7 @@ import {
   CopyIcon,
   GaugeIcon,
   InfoIcon,
+  LanguagesIcon,
   LayersIcon,
   RadioIcon,
   Settings2Icon,
@@ -12,6 +13,7 @@ import {
   WifiOffIcon,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,12 +76,6 @@ import { copyText } from "@/lib/clipboard";
 
 const Trend = lazy(() => import("@/components/trend"));
 
-const windows = [
-  { value: 15, label: "15 分钟" },
-  { value: 60, label: "1 小时" },
-  { value: 1440, label: "24 小时" },
-  { value: 10080, label: "7 天" },
-];
 function Hint({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <Tooltip>
@@ -91,6 +87,7 @@ function Hint({ children, label }: { children: React.ReactNode; label: string })
   );
 }
 function Setup({ endpoint, children }: { endpoint: string; children?: React.ReactNode }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const commandRef = useRef<HTMLElement>(null);
@@ -99,14 +96,12 @@ function Setup({ endpoint, children }: { endpoint: string; children?: React.Reac
     <Dialog>
       <DialogTrigger render={<Button variant={children ? "default" : "secondary"} size="lg" />}>
         <Settings2Icon data-icon="inline-start" />
-        {children || "连接 Codex"}
+        {children || t("connect")}
       </DialogTrigger>
       <DialogContent className="setup-dialog">
         <DialogHeader>
-          <DialogTitle>连接你的 Codex</DialogTitle>
-          <DialogDescription>
-            保持 codex-speed 运行，在另一个终端用下面的命令启动 Codex。
-          </DialogDescription>
+          <DialogTitle>{t("setup_title")}</DialogTitle>
+          <DialogDescription>{t("setup_description")}</DialogDescription>
         </DialogHeader>
         <div className="command-block">
           <pre>
@@ -130,27 +125,26 @@ function Setup({ endpoint, children }: { endpoint: string; children?: React.Reac
             ) : (
               <CopyIcon data-icon="inline-start" />
             )}
-            {copied ? "已复制" : "复制命令"}
+            {copied ? t("copied") : t("copy_command")}
           </Button>
         </div>
-        {copyError && <p role="alert">已选中命令，请按 Ctrl+C（macOS 用 ⌘C）复制。</p>}
+        {copyError && <p role="alert">{t("copy_manual")}</p>}
         <ol className="setup-steps">
-          <li>先启动监控，再启动 Codex；已运行的 Codex 需要重新启动。</li>
-          <li>正常提问或写代码，收到原生 metrics 后页面会自动更新。</li>
-          <li>首 token 与 TBT 通常在服务端返回计时后出现，token 用量在 turn 结束后更新。</li>
+          <li>{t("setup_step1")}</li>
+          <li>{t("setup_step2")}</li>
+          <li>{t("setup_step3")}</li>
         </ol>
-        <p className="text-sm text-muted-foreground">
-          设置只对这次启动生效。服务端计时需要提供方支持，缺失时显示 —。
-        </p>
+        <p className="text-sm text-muted-foreground">{t("setup_note")}</p>
       </DialogContent>
     </Dialog>
   );
 }
 function Details({ data }: { data: Snapshot }) {
+  const { t } = useTranslation();
   const summary = data.summary;
   const names: Record<string, string> = {
-    engine: "引擎服务耗时（Inference）",
-    overhead: "API 额外耗时（Overhead）",
+    engine: t("engine"),
+    overhead: t("overhead"),
     iapi_ttft: "IAPI TTFT",
     iapi_tbt: "IAPI TBT",
   };
@@ -158,63 +152,50 @@ function Details({ data }: { data: Snapshot }) {
     <Dialog>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
         <InfoIcon data-icon="inline-start" />
-        指标说明
+        {t("metric_details")}
       </DialogTrigger>
       <DialogContent className="details-dialog">
         <DialogHeader>
-          <DialogTitle>指标口径与详情</DialogTitle>
-          <DialogDescription>
-            采用服务端原生计时，不使用整轮耗时或客户端网络计时。
-          </DialogDescription>
+          <DialogTitle>{t("details_title")}</DialogTitle>
+          <DialogDescription>{t("details_description")}</DialogDescription>
         </DialogHeader>
         <dl className="definitions">
           <div>
-            <dt>首 token 延迟</dt>
-            <dd>服务端报告的 Service TTFT，主数值为所选窗口内的样本平均值。</dd>
+            <dt>{t("ttft")}</dt>
+            <dd>{t("ttft_definition")}</dd>
           </div>
           <div>
-            <dt>估算 Decode 吞吐</dt>
-            <dd>1000 ÷ 平均 Service TBT（毫秒）。这是服务端 TBT 的倒数估算，不是逐 token 测量。</dd>
+            <dt>{t("decode_estimated")}</dt>
+            <dd>{t("decode_definition")}</dd>
           </div>
           <div>
-            <dt>Token 用量</dt>
-            <dd>
-              原生 turn.token_usage
-              的报告总量。输入包含缓存输入，输出包含推理输出，均不能重复相加。推理输出为模型内部推理所用
-              tokens，不是可见回答长度。不同字段分别统计，缺失不补零。
-            </dd>
+            <dt>{t("token_usage")}</dt>
+            <dd>{t("token_definition")}</dd>
           </div>
           <div>
-            <dt>缓存输入占比</dt>
-            <dd>缓存输入总量 ÷ 输入总量。字段缺失、报告数量不一致或输入为零时不显示。</dd>
+            <dt>{t("cache_share")}</dt>
+            <dd>{t("cache_definition")}</dd>
           </div>
           <div>
-            <dt>请求与发送失败</dt>
-            <dd>
-              失败尝试数 ÷ 全部尝试数。HTTP 请求与 WebSocket 发送分别统计，重试也计数。 WebSocket
-              只反映发送结果，HTTP 只反映请求结果，均不代表整轮生成或任务是否成功。
-              未收到尝试计数时显示 —。
-            </dd>
+            <dt>{t("reliability")}</dt>
+            <dd>{t("reliability_definition")}</dd>
           </div>
           <div>
             <dt>P50 / P95</dt>
-            <dd>
-              从直方图估算；单样本批次可使用精确值。P95 至少需要 20 个样本。采集批次不等于请求或
-              turn。
-            </dd>
+            <dd>{t("quantiles_definition")}</dd>
           </div>
         </dl>
         <p className="text-sm text-muted-foreground">
           TTFT P50 {duration(summary.ttft.p50_ms)} · P95 {duration(summary.ttft.p95_ms)}
-          {summary.ttft.quantiles_approximate ? "（直方图估算）" : ""}
+          {summary.ttft.quantiles_approximate ? t("histogram_estimate") : ""}
         </p>
         <Table>
-          <TableCaption className="sr-only">所选窗口的服务端计时详情</TableCaption>
+          <TableCaption className="sr-only">{t("details_caption")}</TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">指标</TableHead>
-              <TableHead scope="col">窗口平均</TableHead>
-              <TableHead scope="col">样本</TableHead>
+              <TableHead scope="col">{t("metric")}</TableHead>
+              <TableHead scope="col">{t("window_mean")}</TableHead>
+              <TableHead scope="col">{t("observations")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -237,6 +218,13 @@ function Details({ data }: { data: Snapshot }) {
   );
 }
 export default function App() {
+  const { t, i18n } = useTranslation();
+  const windows = [
+    { value: 15, label: t("range_15") },
+    { value: 60, label: t("range_60") },
+    { value: 1440, label: t("range_1440") },
+    { value: 10080, label: t("range_10080") },
+  ];
   const [minutes, setMinutes] = useState(60);
   const [model, setModel] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -254,19 +242,19 @@ export default function App() {
   const last = data?.last_received_ms;
   const fresh = last != null && now - last < 10_000;
   const status = !connected
-    ? "连接中"
+    ? t("connecting")
     : last == null
-      ? "等待 Codex"
+      ? t("waiting_codex")
       : fresh
-        ? "正在接收"
-        : "等待新数据";
+        ? t("receiving")
+        : t("waiting_data");
   const modelItems = data?.models.map((m) => ({ value: m.model, label: m.model })) || [];
   if (selectedModel != null && !modelItems.some((item) => item.value === selectedModel))
     modelItems.push({ value: selectedModel, label: selectedModel });
   return (
     <div className="app-shell">
       <a className="skip-link" href="#content">
-        跳到监控内容
+        {t("skip_content")}
       </a>
       <header className="app-header">
         <a href="/" className="brand">
@@ -276,6 +264,27 @@ export default function App() {
           </span>
         </a>
         <div className="header-actions">
+          <Select
+            items={[
+              { value: "zh", label: "简体中文" },
+              { value: "en", label: "English" },
+            ]}
+            value={i18n.resolvedLanguage || "en"}
+            onValueChange={(value) => {
+              if (value) void i18n.changeLanguage(value);
+            }}
+          >
+            <SelectTrigger className="language-select" aria-label="Language / 语言">
+              <LanguagesIcon aria-hidden="true" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="zh">简体中文</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <Badge variant="secondary">
             {connected ? (
               <RadioIcon data-icon="inline-start" />
@@ -291,22 +300,25 @@ export default function App() {
         <section className="intro">
           <div className="eyebrow">
             <span className="status-dot" />
-            模型服务监控
+            {t("monitor")}
           </div>
-          <h1>服务表现，一目了然。</h1>
-          <p>观察首 token 等待、生成速度和 token 用量。</p>
+          <h1>{t("hero_title")}</h1>
+          <p>{t("hero_description")}</p>
         </section>
         {error && (
           <Alert variant="destructive">
             <WifiOffIcon />
-            <AlertTitle>暂时无法连接监控</AlertTitle>
-            <AlertDescription>{error.message} 页面会自动重试。</AlertDescription>
+            <AlertTitle>{t("connection_error")}</AlertTitle>
+            <AlertDescription>
+              {t("fetch_error")}
+              {t("retry_note")}
+            </AlertDescription>
           </Alert>
         )}
         <div className="toolbar">
           <FieldGroup className="model-field">
             <Field orientation="horizontal">
-              <FieldLabel htmlFor="model-select">模型</FieldLabel>
+              <FieldLabel htmlFor="model-select">{t("model")}</FieldLabel>
               <Select
                 items={modelItems}
                 value={selectedModel}
@@ -314,7 +326,7 @@ export default function App() {
                 onValueChange={(v) => v && setModel(v)}
               >
                 <SelectTrigger id="model-select">
-                  <SelectValue placeholder="等待模型数据" />
+                  <SelectValue placeholder={t("waiting_model")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -329,7 +341,7 @@ export default function App() {
             </Field>
           </FieldGroup>
           <ToggleGroup
-            aria-label="统计时间范围"
+            aria-label={t("time_window")}
             value={[String(minutes)]}
             onValueChange={(v) => v[0] && setMinutes(Number(v[0]))}
             spacing={1}
@@ -341,16 +353,13 @@ export default function App() {
             ))}
           </ToggleGroup>
         </div>
-        <section aria-label="主要指标" className="metrics-grid">
+        <section aria-label={t("main_metrics")} className="metrics-grid">
           <Card tone="blue">
             <CardHeader>
-              <CardTitle>首 token 延迟</CardTitle>
-              <CardDescription>所选窗口 · 平均 Service TTFT</CardDescription>
+              <CardTitle>{t("ttft")}</CardTitle>
+              <CardDescription>{t("ttft_window")}</CardDescription>
               <CardAction>
-                <Hint label="首 token 延迟说明">
-                  服务端报告的 Service TTFT，不含客户端网络延迟。主数值是所选窗口内的平均值。 P50
-                  为中位数，P95 为第 95 百分位，P95 至少需要 20 个样本；估算分位数标记 ≈。
-                </Hint>
+                <Hint label={t("ttft_hint_title")}>{t("ttft_hint")}</Hint>
               </CardAction>
             </CardHeader>
             <CardContent>
@@ -360,7 +369,7 @@ export default function App() {
               </div>
               <div className="metric-context">
                 <TimerIcon aria-hidden="true" />
-                开始生成前的等待
+                {t("wait_before_generation")}
               </div>
               <div className="metric-secondary">
                 <span className="metric-stat">
@@ -380,19 +389,17 @@ export default function App() {
               </div>
             </CardContent>
             <CardFooter>
-              <span>{summary?.ttft.samples || 0} 个有效样本</span>
+              <span>{t("observation_count", { count: summary?.ttft.samples || 0 })}</span>
             </CardFooter>
           </Card>
           <Card tone="green">
             <CardHeader>
               <CardTitle>
-                Decode 吞吐 <Badge variant="secondary">估算</Badge>
+                {t("decode")} <Badge variant="secondary">{t("estimated")}</Badge>
               </CardTitle>
-              <CardDescription>所选窗口 · 基于平均 Service TBT</CardDescription>
+              <CardDescription>{t("decode_window")}</CardDescription>
               <CardAction>
-                <Hint label="Decode 吞吐说明">
-                  1000 ÷ 平均 Service TBT（ms），反映所选窗口的服务端计时，不是逐 token 实测。
-                </Hint>
+                <Hint label={t("decode_hint_title")}>{t("decode_hint")}</Hint>
               </CardAction>
             </CardHeader>
             <CardContent>
@@ -401,11 +408,12 @@ export default function App() {
                 <span>tok/s</span>
               </div>
               <div className="metric-context">
-                <GaugeIcon aria-hidden="true" />首 token 之后的生成速度参考
+                <GaugeIcon aria-hidden="true" />
+                {t("decode_context")}
               </div>
               <div className="metric-secondary">
                 <span className="metric-stat">
-                  平均 TBT{" "}
+                  {t("mean_tbt")}{" "}
                   <strong>
                     {summary?.tbt.mean_ms == null ? "—" : summary.tbt.mean_ms.toFixed(1)} ms
                   </strong>
@@ -413,21 +421,15 @@ export default function App() {
               </div>
             </CardContent>
             <CardFooter>
-              <span>{summary?.tbt.samples || 0} 个有效样本</span>
+              <span>{t("observation_count", { count: summary?.tbt.samples || 0 })}</span>
             </CardFooter>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Token 用量</CardTitle>
-              <CardDescription>所选窗口 · 累计上报用量</CardDescription>
+              <CardTitle>{t("token_usage")}</CardTitle>
+              <CardDescription>{t("tokens_window")}</CardDescription>
               <CardAction>
-                <Hint label="Token 用量说明">
-                  主数值为输出 tokens 的累计上报总量。输入包含缓存输入，不能相加。
-                  推理输出已包含在输出总量中，缺失时显示 —，不能视为零。
-                  缓存输入占比为窗口缓存输入总量 ÷
-                  输入总量，不是请求缓存命中率；报告数量不一致时不显示。 各字段分别统计，缺失显示
-                  —，不补零。
-                </Hint>
+                <Hint label={t("tokens_hint_title")}>{t("tokens_hint")}</Hint>
               </CardAction>
             </CardHeader>
             <CardContent>
@@ -437,28 +439,33 @@ export default function App() {
               </div>
               <div className="metric-context">
                 <ArrowUpRightIcon aria-hidden="true" />
-                输出总量
+                {t("output_total")}
               </div>
               <div className="metric-secondary">
                 <span className="metric-stat">
-                  缓存输入占比 <strong>{percent(summary?.cached_input_percent)}</strong>
+                  {t("cache_share")} <strong>{percent(summary?.cached_input_percent)}</strong>
                 </span>
                 <span className="metric-stat">
-                  推理输出 <strong>{tokens(summary?.reasoning_output_tokens)}</strong>
+                  {t("reasoning_output")}{" "}
+                  <strong>{tokens(summary?.reasoning_output_tokens)}</strong>
                 </span>
               </div>
             </CardContent>
             <CardFooter>
-              <span>输入 {tokens(summary?.input_tokens)}</span>
-              <span>缓存输入 {tokens(summary?.cached_input_tokens)}</span>
+              <span>
+                {t("input")} {tokens(summary?.input_tokens)}
+              </span>
+              <span>
+                {t("cached_input")} {tokens(summary?.cached_input_tokens)}
+              </span>
             </CardFooter>
           </Card>
         </section>
         <section className="trend-section">
           <div className="section-heading">
             <div>
-              <h2>近期趋势</h2>
-              <p>首 token 为桶内平均延迟，Decode 基于桶内平均 TBT 估算；连线仅展示趋势。</p>
+              <h2>{t("recent_trends")}</h2>
+              <p>{t("timing_trend_description")}</p>
             </div>
             {data && <Details data={data} />}
           </div>
@@ -466,8 +473,8 @@ export default function App() {
             <div className="chart-panel">
               <div className="chart-heading">
                 <span className="legend-dot" />
-                <h3>平均首 token 延迟</h3>
-                <span>s · 越低越快</span>
+                <h3>{t("mean_ttft_label")}</h3>
+                <span>{t("lower_faster")}</span>
               </div>
               {data ? (
                 <Suspense fallback={<div className="chart-empty" />}>
@@ -480,8 +487,8 @@ export default function App() {
             <div className="chart-panel">
               <div className="chart-heading" data-tone="green">
                 <span className="legend-dot" />
-                <h3>估算 Decode 吞吐</h3>
-                <span>tok/s · 越高越快</span>
+                <h3>{t("decode_estimated")}</h3>
+                <span>{t("higher_faster")}</span>
               </div>
               {data ? (
                 <Suspense fallback={<div className="chart-empty" />}>
@@ -493,11 +500,11 @@ export default function App() {
             </div>
           </div>
         </section>
-        <section className="trend-section" aria-label="Token 用量趋势">
+        <section className="trend-section" aria-label={t("token_trend")}>
           <div className="section-heading">
             <div>
-              <h2>Token 用量趋势</h2>
-              <p>输入包含缓存输入，输出包含推理输出；点为桶内累计上报用量，点击图例单独查看。</p>
+              <h2>{t("token_trend")}</h2>
+              <p>{t("token_trend_description")}</p>
             </div>
             <span className="text-xs text-muted-foreground">tokens</span>
           </div>
@@ -509,32 +516,38 @@ export default function App() {
             <div className="chart-empty" />
           )}
         </section>
-        <section className="trend-section" aria-label="请求与发送失败">
+        <section className="trend-section" aria-label={t("reliability")}>
           <div className="section-heading">
             <div>
-              <h2>请求与发送失败</h2>
-              <p>汇总值按所选窗口计算，图中点为桶内失败率；重试也计数，不代表任务失败率。</p>
+              <h2>{t("reliability")}</h2>
+              <p>{t("reliability_description")}</p>
             </div>
           </div>
           <div className="attempt-summary">
             <div>
               <span className="legend-dot" />
-              <span>HTTP 请求失败率</span>
+              <span>{t("http_failure")}</span>
               <strong>{percent(summary?.http_attempts?.failure_percent)}</strong>
               <span className="attempt-count">
                 {summary?.http_attempts
-                  ? `${tokens(summary.http_attempts.failed)} / ${tokens(summary.http_attempts.total)} 次尝试`
-                  : "等待请求计数"}
+                  ? t("attempt_count", {
+                      failed: tokens(summary.http_attempts.failed),
+                      total: tokens(summary.http_attempts.total),
+                    })
+                  : t("waiting_http")}
               </span>
             </div>
             <div>
               <span className="legend-dot" data-tone="purple" />
-              <span>WebSocket 发送失败率</span>
+              <span>{t("ws_failure")}</span>
               <strong>{percent(summary?.websocket_send_attempts?.failure_percent)}</strong>
               <span className="attempt-count">
                 {summary?.websocket_send_attempts
-                  ? `${tokens(summary.websocket_send_attempts.failed)} / ${tokens(summary.websocket_send_attempts.total)} 次尝试`
-                  : "等待发送计数"}
+                  ? t("attempt_count", {
+                      failed: tokens(summary.websocket_send_attempts.failed),
+                      total: tokens(summary.websocket_send_attempts.total),
+                    })
+                  : t("waiting_ws")}
               </span>
             </div>
           </div>
@@ -549,22 +562,24 @@ export default function App() {
         <section className="models-section">
           <div className="section-heading">
             <div>
-              <h2>模型表现</h2>
-              <p>同一时间窗口内，分别观察每个模型。</p>
+              <h2>{t("models_title")}</h2>
+              <p>{t("models_description")}</p>
             </div>
-            <Badge variant="secondary">{data?.models.length || 0} 个模型</Badge>
+            <Badge variant="secondary">
+              {t("model_count", { count: data?.models.length || 0 })}
+            </Badge>
           </div>
           {data?.models.length ? (
             <Table>
-              <TableCaption className="sr-only">各模型的服务端计时和 token 用量</TableCaption>
+              <TableCaption className="sr-only">{t("models_caption")}</TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead scope="col">模型</TableHead>
-                  <TableHead scope="col">平均 TTFT</TableHead>
-                  <TableHead scope="col">估算 Decode</TableHead>
-                  <TableHead scope="col">输入 / 缓存</TableHead>
-                  <TableHead scope="col">输出</TableHead>
-                  <TableHead scope="col">TTFT / TBT 样本</TableHead>
+                  <TableHead scope="col">{t("model")}</TableHead>
+                  <TableHead scope="col">{t("mean_ttft")}</TableHead>
+                  <TableHead scope="col">{t("estimated_decode")}</TableHead>
+                  <TableHead scope="col">{t("input_cache")}</TableHead>
+                  <TableHead scope="col">{t("output")}</TableHead>
+                  <TableHead scope="col">{t("timing_observations")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -595,17 +610,13 @@ export default function App() {
                 <EmptyMedia variant="icon">
                   <ArrowDownLeftIcon />
                 </EmptyMedia>
-                <EmptyTitle>
-                  {last == null ? "等你的第一个样本" : "这个窗口内还没有有效样本"}
-                </EmptyTitle>
+                <EmptyTitle>{last == null ? t("empty_first") : t("empty_window")}</EmptyTitle>
                 <EmptyDescription>
-                  {last == null
-                    ? "连接 Codex 后，正常使用即可开始监控。"
-                    : "已收到遥测。计时可能尚未返回，或当前服务不提供这些指标；也可以扩大时间范围。"}
+                  {last == null ? t("empty_connect") : t("empty_received")}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Setup endpoint={endpoint}>开始采集</Setup>
+                <Setup endpoint={endpoint}>{t("start_collecting")}</Setup>
               </EmptyContent>
             </Empty>
           )}
@@ -613,9 +624,9 @@ export default function App() {
         <footer className="page-footer">
           <span>
             <RadioIcon aria-hidden="true" />
-            {last == null ? "尚未收到遥测" : `最后接收 ${clock(last)}`}
+            {last == null ? t("no_telemetry") : t("last_received", { time: clock(last) })}
           </span>
-          <span>本地采集 · 保留 7 天 · 服务端原生 metrics</span>
+          <span>{t("footer_note")}</span>
         </footer>
       </main>
     </div>

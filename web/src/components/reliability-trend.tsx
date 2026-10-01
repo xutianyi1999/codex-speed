@@ -1,14 +1,16 @@
 import { ActivityIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
-import { clock, percent, type Snapshot } from "@/lib/api";
+import { clock, percent, type Snapshot, timeTick } from "@/lib/api";
 
-const series = {
-  http_failure_percent: { label: "HTTP 请求失败率", color: "var(--chart-1)" },
-  websocket_send_failure_percent: { label: "WebSocket 发送失败率", color: "var(--chart-3)" },
-};
 export default function ReliabilityTrend({ data }: { data: Snapshot }) {
+  const { t } = useTranslation();
+  const series = {
+    http_failure_percent: { label: t("http_failure"), color: "var(--chart-1)" },
+    websocket_send_failure_percent: { label: t("ws_failure"), color: "var(--chart-3)" },
+  };
   if (
     !data.trend.some(
       (p) => p.http_failure_percent != null || p.websocket_send_failure_percent != null,
@@ -20,7 +22,7 @@ export default function ReliabilityTrend({ data }: { data: Snapshot }) {
           <EmptyMedia variant="icon">
             <ActivityIcon />
           </EmptyMedia>
-          <EmptyDescription>等待原生请求与发送计数</EmptyDescription>
+          <EmptyDescription>{t("waiting_attempts")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -37,13 +39,7 @@ export default function ReliabilityTrend({ data }: { data: Snapshot }) {
           dataKey="time_ms"
           type="number"
           domain={["dataMin", "dataMax"]}
-          tickFormatter={(v) =>
-            new Date(v).toLocaleTimeString("zh-CN", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          }
+          tickFormatter={timeTick}
           tickLine={false}
           axisLine={false}
           minTickGap={45}

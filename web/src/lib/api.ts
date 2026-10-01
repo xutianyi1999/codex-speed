@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import i18n, { locale } from "@/lib/i18n";
 
 export interface Distribution {
   samples: number;
@@ -69,7 +70,7 @@ export function useMetrics(minutes: number, model: string | null) {
       const params = new URLSearchParams({ minutes: String(minutes) });
       if (model != null) params.set("model", model);
       const response = await fetch(`/api/snapshot?${params}`, { signal });
-      if (!response.ok) throw new Error("无法获取监控数据，请确认 codex-speed 正在运行。");
+      if (!response.ok) throw new Error(i18n.t("fetch_error"));
       return response.json();
     },
     refetchInterval: 10_000,
@@ -93,5 +94,13 @@ export function rate(value: number | null | undefined): string {
   return value == null ? "—" : value.toFixed(1);
 }
 export function clock(value: number | null | undefined): string {
-  return value == null ? "—" : new Date(value).toLocaleTimeString("zh-CN", { hour12: false });
+  return value == null ? "—" : new Date(value).toLocaleTimeString(locale(), { hour12: false });
+}
+
+export function timeTick(value: number): string {
+  return new Date(value).toLocaleTimeString(locale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }

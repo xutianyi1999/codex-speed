@@ -161,6 +161,12 @@
   height: 38px;
   padding-inline: 16px;
 }
+[data-slot="select-trigger"].language-select {
+  min-width: 0;
+  height: 32px;
+  padding-inline: 10px;
+  background: transparent;
+}
 .toolbar [data-slot="toggle-group"] {
   background: var(--muted);
   padding: 4px;
