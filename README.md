@@ -2,17 +2,17 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A local web dashboard for Codex's native OpenTelemetry metrics. The frontend is embedded in the Rust executable: no Node.js, frontend directory, or remote server is needed at runtime.
+A local web dashboard for Codex model service performance: first-token latency, estimated decode throughput, token usage, and request failures. Uses Codex's native OpenTelemetry metrics.
 
-![Light web dashboard with synthetic preview metrics](docs/assets/web-desktop-en.png)
+![Codex Speed dashboard in English](docs/assets/web-desktop-en.png)
 
-*Preview uses synthetic test data.*
+*Preview uses sample data.*
 
-The interface supports English and Simplified Chinese, using i18next and react-i18next. Select a language in the top-right corner; your choice is saved in this browser. The first visit follows the browser language, with English as the fallback. Translations are bundled into the executable.
+Switch between English and Simplified Chinese in the top-right corner. The dashboard follows your browser language on first visit and remembers your choice.
 
-## Build and start
+## Get started
 
-Requires Rust 1.94+, Node.js 24+, and pnpm 12.8.1 for building. Run all commands from the repository root; the pnpm workspace manages frontend dependencies and development/release scripts.
+Building requires Rust 1.94+, Node.js 24+, and pnpm 12.8.1. Run from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -20,27 +20,20 @@ pnpm build
 ./target/release/codex-speed
 ```
 
-Open <http://127.0.0.1:4318>. The same server receives metrics at `/v1/metrics`.
-
-To install after building the frontend:
-
-```sh
-cargo install --path . --locked
-codex-speed
-```
+Open <http://127.0.0.1:4318>. The executable includes the frontend; Node.js is only needed for building.
 
 ## Connect Codex
 
-Keep the dashboard running. Start Codex in another terminal:
+Keep the dashboard running, then start Codex in another terminal:
 
 ```sh
 OTEL_METRIC_EXPORT_INTERVAL=1000 codex --enable runtime_metrics \
   -c 'otel.metrics_exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/metrics",protocol="json"}}'
 ```
 
-This requests runtime timing metrics and exports native metrics about every second. It affects only that Codex process; an already-running Codex must be restarted with these settings. No Codex source changes or proxy are involved. Logs and traces need not be exported.
+This exports metrics about every second. Settings apply to this launch only; restart an existing Codex process to use them.
 
-For persistent configuration, merge these settings into the existing user-level `~/.codex/config.toml` tables:
+To keep the exporter enabled, merge these settings into the existing tables in `~/.codex/config.toml`:
 
 ```toml
 [features]
@@ -50,86 +43,59 @@ runtime_metrics = true
 metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "json" } }
 ```
 
-The export interval still comes from `OTEL_METRIC_EXPORT_INTERVAL` (milliseconds). `runtime_metrics` is experimental; timing availability depends on the Codex version, transport and provider. This integration was probed with Codex CLI 0.159.3. See the [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+Set `OTEL_METRIC_EXPORT_INTERVAL=1000` in your shell for one-second exports. `runtime_metrics` is experimental; timing availability depends on your Codex version and provider. See the [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
-## What is measured
+## Read the metrics
 
-| Display | Native source / calculation |
+Select a model and a time window. Values summarize that window; they are not instantaneous readings.
+
+| Metric | Meaning |
 | --- | --- |
-| First-token latency | Mean `codex.responses_api_engine_service_ttft.duration_ms` |
-| Estimated decode throughput | `1000 × TBT sample count / TBT sum`, from `codex.responses_api_engine_service_tbt.duration_ms` |
-| Input / cached input / output / reasoning output | Sums of `codex.turn.token_usage`, grouped by `token_type` |
-| TTFT P50 / P95 | Histogram estimates; exact nearest-rank values when every exported point contains one observation |
-| Cached input share | `100 × cached input / input`; omitted when fields are missing, report counts differ, or input is zero |
-| HTTP attempt failure rate | Failed / all attempts from the monotonic `codex.api_request` counter |
-| WebSocket send failure rate | Failed / all sends from the monotonic `codex.websocket.request` counter |
+| First-token latency | Mean server-reported Service TTFT; lower is faster |
+| Estimated decode throughput | `1000 ÷ mean Service TBT (ms)`; higher is faster |
+| TTFT P50 / P95 | Median and 95th percentile; histogram estimates are marked `≈`. P95 requires 20 observations |
+| Token usage | Reported totals for input, cached input, output, and reasoning output |
+| Cached input share | Cached input ÷ input; not a request cache hit rate |
+| HTTP request failure rate | Failed HTTP attempts ÷ all HTTP attempts |
+| WebSocket send failure rate | Failed request-frame sends ÷ all sends |
 
-The dashboard always selects one model. On first receiving data, it selects the most recently observed model and then preserves that selection. Without model data, the selector shows a waiting state.
+Input includes cached input; output includes reasoning output. Do not add these subsets to their totals. Reasoning tokens measure internal reasoning, not visible answer length. Missing values appear as `—`, not zero.
 
-The headline numbers describe the selected window (15 minutes, 1 hour, 24 hours, or 7 days). Each metric has its own sample count. These are **server-reported timing references**, not a client benchmark. Service TBT has an internal cross-engine-call aggregation scope; its inverse is explicitly an estimate, not measured per-token decode throughput. IAPI and engine/overhead timings are available in the details dialog when reported.
+Timings come from the server and exclude client network latency and local tool execution. Decode throughput is an estimate from Service TBT, not a per-token measurement. Timing and token reports have separate sample counts; token usage usually arrives after a turn ends.
 
-Input includes cached input; output includes reasoning output. Neither subset should be added to its total. Reasoning output measures model-internal reasoning tokens, not visible answer length. Token metrics are reported per turn/model, while timing observations have their own scope. Timing and token counts are not paired into request records. Missing fields remain `—`; native reported zero values remain zero. P95 is withheld until there are at least 20 observations. Infinite histogram tails or incompatible bucket layouts can leave quantiles unavailable.
+Trend points show time-bucket averages for timings and totals for tokens. Lines connect observations without filling missing values. Select a token legend item to view one series. Additional server timings are available under **Metric details**.
 
-Metrics arrive in periodic batches; server timings typically become available after a timing event, and token usage at turn completion. The dashboard does not show instantaneous per-token speed. Trends use up to 61 time buckets with gaps for missing measurements. Timing dots show bucket means; lines connect observed points across gaps without imputing missing values; the token chart shows bucket sums for input, cached input, output and reasoning output. Select a legend item to inspect one series with its own automatically scaled axis. Cached input is neither stacked nor added to input. No turn-duration, tool-time subtraction, or session-log inference is used.
+Failure rates count retries separately. WebSocket send success does not mean generation succeeded; neither failure rate measures task success or captures every subsequent streaming error.
 
-Failure percentages are computed from the observed attempts in each window or bucket, never by averaging percentages. HTTP and WebSocket counters remain separate: HTTP measures request results, while WebSocket measures sending the request frame, not the result of generation. Retries are separate attempts. Neither percentage is a task failure rate; streaming errors after a successful request/send are outside this scope. Missing counters remain unknown. Cumulative counters use the first export as a baseline and persist that baseline across monitor restarts.
+## Storage and access
 
-## Storage and options
-
-SQLite stores supported histogram points for seven days in the platform's local data directory under `codex-speed/metrics.sqlite` (on Linux, typically `~/.local/share/codex-speed/`). History survives restarts. The schema is defined in `src/schema.sql`. If loading fails at startup, the database and WAL/SHM files are deleted and an empty database is created. There are no migrations or old-schema compatibility paths; a failed recreation stops startup. Only model names, timing/token aggregates, timestamps and hashed stream identities are persisted, not prompts or raw telemetry envelopes.
+History is kept locally for seven days and survives restarts. On Linux, the default database is `~/.local/share/codex-speed/metrics.sqlite`. Prompts are not stored. If the database cannot be loaded at startup, it is deleted and recreated empty.
 
 | Option | Default |
 | --- | --- |
 | `--host IP` | `0.0.0.0` |
 | `--port PORT` | `4318` |
-| `--data-dir PATH` | Platform local data directory / `codex-speed` |
+| `--data-dir PATH` | System local data directory / `codex-speed` |
 
-The listener defaults to `0.0.0.0`; other computers can visit `http://<server IP>:4318`. Use `--host 127.0.0.1` for local-only access. Remote Codex exporters should use the server IP; the connection dialog uses the current dashboard address. There is no login authentication; access is controlled by the network and firewall. Update Codex's exporter endpoint if you change the port. HTTP OTLP JSON and protobuf, including gzip requests, are supported. Delta exports are deduplicated. Cumulative exports establish a baseline first, then record increments; the baseline is persisted to avoid counting old history after a restart. Histogram flags, bucket consistency and timing ranges are validated. Old records are removed during ingestion or snapshot refresh.
+Other computers can access `http://<server IP>:4318`; remote Codex exporters should use that server IP too. Use `--host 127.0.0.1` for local-only access. There is no login authentication. If you change the port, update the Codex exporter endpoint.
 
 ## Development
-
-Backend: Axum, Tokio, SQLx/SQLite, official `opentelemetry-proto` types and `rust-embed`.
-Frontend: React 19.3, TypeScript 7, Vite 8, Tailwind 4, shadcn/ui with Base UI, TanStack Query and Recharts 3. Dependencies are locked in `Cargo.lock` and `pnpm-lock.yaml`.
-
-### Dev: automatic frontend and backend updates
-
-Install the development tools and dependencies once:
 
 ```sh
 cargo install watchexec-cli --locked
 pnpm install --frozen-lockfile
-```
-
-Start both servers with one command:
-
-```sh
 pnpm dev
 ```
 
-Open <http://127.0.0.1:5173>. Vite provides React Fast Refresh; Watchexec recompiles and restarts Rust on changes. concurrently manages both processes: Ctrl+C stops both, and either process exiting stops the other. Rust compilation errors keep the watcher alive so fixing the source triggers another build. SSE reconnects after backend restarts.
+Open <http://127.0.0.1:5173>. Frontend changes update immediately; Rust changes trigger a rebuild and restart. Ctrl+C stops both servers.
 
-The development API listens on `0.0.0.0:4318` and Vite on `0.0.0.0:5173`. Vite proxies `/api`, SSE and `/v1/metrics`. The database lives at `target/dev-data/metrics.sqlite`, and build artifacts at `target/dev-build/`. The database is separate from release; both backend modes use port `4318`, so they cannot bind that port simultaneously.
-
-The backend uses `--no-default-features`: API only, no embedded assets and no dependency on `web/dist`. Connect Codex to `http://127.0.0.1:4318/v1/metrics`; the dashboard connection command points directly to the backend on port `4318`, just as in release.
-
-### Release: an executable with embedded frontend
-
-```sh
-pnpm build
-./target/release/codex-speed
-```
-
-This builds the frontend first, then the release Rust executable. The default `embedded-web` feature embeds `web/dist`; runtime needs no Vite, Node.js or frontend files. Release defaults remain port `4318` and the platform local data directory. Plain `cargo run` also embeds the frontend and requires a frontend build; use the `dev` command above for live development.
+Codex still exports to `http://127.0.0.1:4318/v1/metrics`. Development data is separate at `target/dev-data/metrics.sqlite`. Development and release use the same backend port, so run one at a time. For an executable with the frontend embedded, use the build commands above.
 
 ```sh
 pnpm lint
-pnpm build:frontend
-cargo fmt --check
-cargo test --locked
-cargo clippy --all-targets --locked -- -D warnings
-cargo build --locked
+pnpm typecheck
 pnpm browsers
 pnpm test
 ```
 
-Playwright starts an isolated local server and database, tests live OTLP ingestion, filtering, deduplication, desktop/laptop layouts and accessibility, and writes preview screenshots under `docs/assets/`.
+Tests cover metric collection, filters, language switching, desktop layouts, and accessibility. Playwright regenerates English and Chinese preview images in `docs/assets/`.
