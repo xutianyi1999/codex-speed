@@ -1,0 +1,10 @@
+minimumReleaseAgeExclude:
+  - '@biomejs/cli-darwin-x64@2.5.15'
+  - '@biomejs/cli-linux-arm64-musl@2.5.15'
+  - '@biomejs/cli-linux-x64-musl@2.5.15'
+  - '@biomejs/cli-linux-x64@2.5.15'
+  - '@biomejs/cli-win32-arm64@2.5.15'
+  - '@biomejs/cli-win32-x64@2.5.15'
+  - '@shadcn/registry@0.1.0'
+  - shadcn@4.21.1
+  - vite@8.3.2
