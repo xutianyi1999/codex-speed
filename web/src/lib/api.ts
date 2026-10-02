@@ -29,6 +29,12 @@ export interface Attempts {
   failed: number;
   failure_percent: number;
 }
+export type ReportKind = "ttft" | "tbt" | "input" | "cached_input" | "output" | "reasoning_output";
+export interface RecentReport {
+  id: number;
+  received_ms: number;
+  values: Partial<Record<ReportKind, { samples: number; value: number | null }>>;
+}
 export interface Snapshot {
   now_ms: number;
   last_received_ms: number | null;
@@ -37,6 +43,8 @@ export interface Snapshot {
   selected_model: string | null;
   models: (Summary & { model: string })[];
   summary: Summary;
+  recent_timings: RecentReport[];
+  recent_tokens: RecentReport[];
   trend: {
     time_ms: number;
     ttft_ms: number | null;
@@ -103,4 +111,31 @@ export function timeTick(value: number): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+export function reportTime(value: number): string {
+  return new Date(value).toLocaleString(locale(), {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+export function reportCacheShare(row: RecentReport): number | null {
+  const input = row.values.input;
+  const cached = row.values.cached_input;
+  if (
+    !input ||
+    !cached ||
+    input.value == null ||
+    cached.value == null ||
+    input.samples !== cached.samples ||
+    input.value <= 0 ||
+    cached.value > input.value
+  )
+    return null;
+  return (100 * cached.value) / input.value;
 }

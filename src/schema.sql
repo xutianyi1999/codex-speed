@@ -21,3 +21,11 @@ CREATE TABLE IF NOT EXISTS receiver (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_received_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS report_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_ms INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    timings TEXT NOT NULL,
+    tokens TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS report_batches_model_time ON report_batches(model, received_ms DESC, id DESC);

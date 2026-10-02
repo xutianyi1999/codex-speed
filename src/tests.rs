@@ -587,3 +587,118 @@ async fn reasoning_tokens_are_a_separate_subset_not_added_to_output() {
         .unwrap();
     assert!(empty.summary.reasoning_output_tokens.is_none());
 }
+
+#[tokio::test]
+async fn recent_reports_group_actual_exports_and_preserve_independent_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test.sqlite");
+    let store = Store::open(&path).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    let make = |kind: &str, count, sum| {
+        let mut p = point(now, 1, count, sum, false);
+        p.kind = kind.into();
+        p.stream = kind.into();
+        p
+    };
+    let points = vec![
+        make("ttft", 2, 4200.0),
+        make("tbt", 1, 50.0),
+        make("input", 2, 24000.0),
+        make("output", 1, 0.0),
+    ];
+    assert_eq!(
+        store
+            .ingest(
+                Parsed {
+                    points,
+                    rejected: 0
+                },
+                now
+            )
+            .await
+            .unwrap()
+            .0,
+        4
+    );
+    assert_eq!(
+        store
+            .ingest(batch(make("ttft", 2, 4200.0)), now)
+            .await
+            .unwrap()
+            .0,
+        0
+    );
+    let snap = store
+        .snapshot(60, Some("gpt-test".into()), String::new(), now)
+        .await
+        .unwrap();
+    assert_eq!(snap.recent_timings.len(), 1);
+    assert_eq!(snap.recent_tokens.len(), 1);
+    let timings = &snap.recent_timings[0].values;
+    assert_eq!(
+        (timings["ttft"].samples, timings["ttft"].value),
+        (2, Some(2100.0))
+    );
+    assert_eq!(
+        (timings["tbt"].samples, timings["tbt"].value),
+        (1, Some(20.0))
+    );
+    let tokens = &snap.recent_tokens[0].values;
+    assert_eq!(tokens["input"].value, Some(24000.0));
+    assert_eq!(tokens["output"].value, Some(0.0));
+    assert!(!tokens.contains_key("cached_input"));
+    // Distinct exports received at the same time still have separate identities.
+    let mut zero_tbt = make("tbt", 1, 0.0);
+    zero_tbt.stream = "zero-tbt".into();
+    store.ingest(batch(zero_tbt), now).await.unwrap();
+    let snap = store
+        .snapshot(60, Some("gpt-test".into()), String::new(), now)
+        .await
+        .unwrap();
+    assert_eq!(snap.recent_timings.len(), 2);
+    assert_ne!(snap.recent_timings[0].id, snap.recent_timings[1].id);
+    assert!(!snap.recent_timings[0].values.contains_key("ttft"));
+    assert_eq!(snap.recent_timings[0].values["tbt"].value, None);
+    for i in 1..=25 {
+        store
+            .ingest(
+                batch(point(now + i * 1000, i as u64, 1, 2500.0, false)),
+                now + i * 1000,
+            )
+            .await
+            .unwrap();
+    }
+    let snap = store
+        .snapshot(60, Some("gpt-test".into()), String::new(), now + 25_000)
+        .await
+        .unwrap();
+    assert_eq!(snap.recent_timings.len(), 20);
+    assert_eq!(
+        snap.recent_timings.first().unwrap().received_ms,
+        now + 25_000
+    );
+    assert_eq!(snap.recent_timings.last().unwrap().received_ms, now + 6000);
+    assert!(
+        snap.recent_timings
+            .windows(2)
+            .all(|r| r[0].received_ms >= r[1].received_ms)
+    );
+    let empty = store
+        .snapshot(60, Some("other-model".into()), String::new(), now + 25_000)
+        .await
+        .unwrap();
+    assert!(empty.recent_timings.is_empty() && empty.recent_tokens.is_empty());
+    let expired = store
+        .snapshot(15, Some("gpt-test".into()), String::new(), now + 960_000)
+        .await
+        .unwrap();
+    assert!(expired.recent_timings.is_empty() && expired.recent_tokens.is_empty());
+    drop(store);
+    let reopened = Store::open(&path).await.unwrap();
+    let reopened = reopened
+        .snapshot(60, Some("gpt-test".into()), String::new(), now + 25_000)
+        .await
+        .unwrap();
+    assert_eq!(reopened.recent_timings[0].id, snap.recent_timings[0].id);
+    assert_eq!(reopened.summary.ttft.samples, snap.summary.ttft.samples);
+}

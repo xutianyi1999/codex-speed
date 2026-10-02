@@ -1,6 +1,6 @@
 use crate::metrics::{Histogram, Parsed};
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
@@ -206,6 +206,19 @@ pub struct TrendPoint {
     pub websocket_send_failure_percent: Option<f64>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ReportValue {
+    pub samples: u64,
+    pub value: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct RecentReport {
+    pub id: i64,
+    pub received_ms: i64,
+    pub values: BTreeMap<String, ReportValue>,
+}
+
 #[derive(Serialize)]
 pub struct Snapshot {
     pub now_ms: i64,
@@ -216,6 +229,8 @@ pub struct Snapshot {
     pub models: Vec<ModelSummary>,
     pub summary: Summary,
     pub trend: Vec<TrendPoint>,
+    pub recent_timings: Vec<RecentReport>,
+    pub recent_tokens: Vec<RecentReport>,
 }
 
 impl Store {
@@ -268,7 +283,8 @@ impl Store {
             sqlx::raw_sql(
                 "SELECT stream, start, end, time_ms, model, kind, histogram FROM samples LIMIT 0;
                 SELECT stream, start, end, histogram, updated_ms FROM cumulative LIMIT 0;
-                SELECT id, last_received_ms FROM receiver LIMIT 0;",
+                SELECT id, last_received_ms FROM receiver LIMIT 0;
+                SELECT id, received_ms, model, timings, tokens FROM report_batches LIMIT 0;",
             )
             .execute(&pool)
             .await?;
@@ -305,6 +321,10 @@ impl Store {
             .bind(cutoff)
             .execute(&self.pool)
             .await?;
+        sqlx::query("DELETE FROM report_batches WHERE received_ms < ?")
+            .bind(cutoff)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -312,6 +332,7 @@ impl Store {
         self.prune(now).await?;
         // Acquire the write lock before reading baselines to serialize simultaneous exporters.
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut batches: BTreeMap<String, SummaryBuilder> = BTreeMap::new();
         let mut accepted = 0;
         let mut rejected = parsed.rejected;
         for point in parsed.points {
@@ -359,7 +380,7 @@ impl Store {
             if h.count == 0 {
                 continue;
             }
-            accepted += sqlx::query("INSERT OR IGNORE INTO samples VALUES (?, ?, ?, ?, ?, ?, ?)")
+            let inserted = sqlx::query("INSERT OR IGNORE INTO samples VALUES (?, ?, ?, ?, ?, ?, ?)")
                 .bind(&point.stream)
                 .bind(&start)
                 .bind(&end)
@@ -370,6 +391,46 @@ impl Store {
                 .execute(&mut *tx)
                 .await?
                 .rows_affected() as usize;
+            accepted += inserted;
+            if inserted > 0 {
+                batches
+                    .entry(point.model.clone())
+                    .or_default()
+                    .add(&point.kind, h, time);
+            }
+        }
+        // A row represents an actual received export for one model, not a request.
+        // Only newly accepted measurements contribute; retransmissions add no rows.
+        for (model, batch) in batches {
+            let values = |kinds: &[&str]| -> BTreeMap<String, ReportValue> {
+                kinds
+                    .iter()
+                    .filter_map(|&kind| {
+                        let metric = batch.metrics.get(kind)?;
+                        let value = match kind {
+                            "ttft" => metric.mean(),
+                            "tbt" => (metric.sum > 0.0)
+                                .then(|| 1000.0 * metric.count as f64 / metric.sum),
+                            _ => Some(metric.sum),
+                        };
+                        Some((
+                            kind.to_owned(),
+                            ReportValue {
+                                samples: metric.count,
+                                value,
+                            },
+                        ))
+                    })
+                    .collect()
+            };
+            let timings = values(&["ttft", "tbt"]);
+            let tokens = values(&["input", "cached_input", "output", "reasoning_output"]);
+            if timings.is_empty() && tokens.is_empty() {
+                continue;
+            }
+            sqlx::query("INSERT INTO report_batches (received_ms, model, timings, tokens) VALUES (?, ?, ?, ?)")
+                .bind(now).bind(model).bind(serde_json::to_string(&timings)?).bind(serde_json::to_string(&tokens)?)
+                .execute(&mut *tx).await?;
         }
         sqlx::query("INSERT INTO receiver VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET last_received_ms=excluded.last_received_ms")
             .bind(now).execute(&mut *tx).await?;
@@ -438,6 +499,12 @@ impl Store {
                 }
             })
             .collect();
+        let recent_timings = self
+            .recent_reports(selected.as_deref(), since, now, true)
+            .await?;
+        let recent_tokens = self
+            .recent_reports(selected.as_deref(), since, now, false)
+            .await?;
         Ok(Snapshot {
             now_ms: now,
             last_received_ms,
@@ -453,6 +520,36 @@ impl Store {
                 .collect(),
             summary: summary.finish(),
             trend,
+            recent_timings,
+            recent_tokens,
         })
+    }
+    async fn recent_reports(
+        &self,
+        model: Option<&str>,
+        since: i64,
+        now: i64,
+        timing: bool,
+    ) -> Result<Vec<RecentReport>> {
+        let query = if timing {
+            "SELECT id, received_ms, timings AS metrics FROM report_batches WHERE model = ? AND received_ms >= ? AND received_ms <= ? AND timings != '{}' ORDER BY received_ms DESC, id DESC LIMIT 20"
+        } else {
+            "SELECT id, received_ms, tokens AS metrics FROM report_batches WHERE model = ? AND received_ms >= ? AND received_ms <= ? AND tokens != '{}' ORDER BY received_ms DESC, id DESC LIMIT 20"
+        };
+        let rows = sqlx::query(query)
+            .bind(model)
+            .bind(since)
+            .bind(now)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(RecentReport {
+                    id: row.try_get("id")?,
+                    received_ms: row.try_get("received_ms")?,
+                    values: serde_json::from_str(row.try_get::<&str, _>("metrics")?)?,
+                })
+            })
+            .collect()
     }
 }

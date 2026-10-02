@@ -1,12 +1,10 @@
 import {
-  ArrowDownLeftIcon,
   ArrowUpRightIcon,
   CheckIcon,
   CopyIcon,
   GaugeIcon,
   InfoIcon,
   LanguagesIcon,
-  LayersIcon,
   RadioIcon,
   Settings2Icon,
   TimerIcon,
@@ -14,6 +12,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import RecentReports from "@/components/recent-reports";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,14 +33,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -559,68 +550,7 @@ export default function App() {
             <div className="chart-empty" />
           )}
         </section>
-        <section className="models-section">
-          <div className="section-heading">
-            <div>
-              <h2>{t("models_title")}</h2>
-              <p>{t("models_description")}</p>
-            </div>
-            <Badge variant="secondary">
-              {t("model_count", { count: data?.models.length || 0 })}
-            </Badge>
-          </div>
-          {data?.models.length ? (
-            <Table>
-              <TableCaption className="sr-only">{t("models_caption")}</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">{t("model")}</TableHead>
-                  <TableHead scope="col">{t("mean_ttft")}</TableHead>
-                  <TableHead scope="col">{t("estimated_decode")}</TableHead>
-                  <TableHead scope="col">{t("input_cache")}</TableHead>
-                  <TableHead scope="col">{t("output")}</TableHead>
-                  <TableHead scope="col">{t("timing_observations")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.models.map((m) => (
-                  <TableRow key={m.model}>
-                    <TableCell>
-                      <Button variant="ghost" onClick={() => setModel(m.model)}>
-                        <LayersIcon data-icon="inline-start" />
-                        {m.model}
-                      </Button>
-                    </TableCell>
-                    <TableCell>{seconds(m.ttft.mean_ms)} s</TableCell>
-                    <TableCell>{rate(m.decode_tps)} tok/s</TableCell>
-                    <TableCell>
-                      {tokens(m.input_tokens)} / {tokens(m.cached_input_tokens)}
-                    </TableCell>
-                    <TableCell>{tokens(m.output_tokens)} tokens</TableCell>
-                    <TableCell>
-                      {m.ttft.samples} / {m.tbt.samples}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <ArrowDownLeftIcon />
-                </EmptyMedia>
-                <EmptyTitle>{last == null ? t("empty_first") : t("empty_window")}</EmptyTitle>
-                <EmptyDescription>
-                  {last == null ? t("empty_connect") : t("empty_received")}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Setup endpoint={endpoint}>{t("start_collecting")}</Setup>
-              </EmptyContent>
-            </Empty>
-          )}
-        </section>
+        {data && <RecentReports data={data} />}
         <footer className="page-footer">
           <span>
             <RadioIcon aria-hidden="true" />

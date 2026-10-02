@@ -1,5 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+
+async function selectModel(page: Page, model: string) {
+  await page.locator('#model-select').click()
+  await page.getByRole('option', { name: model, exact: true }).click()
+}
 
 function payload(model: string, time: number, ttft: number, tbt: number) {
   const attempts = (name: string, success: boolean, count: number) => ({ name, sum: {
@@ -45,8 +50,7 @@ test('setup, live metrics, filters and accessible responsive layout', async ({ p
     const response = await request.post('/v1/metrics', { data: payload(model, now - (27 - i) * 60000, 2100 + Math.sin(i / 3) * 450, 45 + Math.cos(i / 4) * 8) })
     expect(response.ok()).toBeTruthy()
   }
-  await expect(page.getByRole('button', { name: model, exact: true })).toBeVisible()
-  await page.getByRole('button', { name: model, exact: true }).click()
+  await selectModel(page, model)
   await expect(page.locator('#model-select')).toContainText(model)
   await page.locator('#model-select').click()
   await expect(page.getByRole('option', { name: '全部模型', exact: true })).toHaveCount(0)
@@ -129,7 +133,7 @@ test('language switching translates metrics and dialogs, preserves filters and p
   const model = `locale-${info.project.name}`
   await request.post('/v1/metrics', { data: payload(model, Date.now(), 2100, 40) })
   await page.goto('/')
-  await page.getByRole('button', { name: model, exact: true }).click()
+  await selectModel(page, model)
   await page.getByRole('button', { name: '15 分钟', exact: true }).click()
   await page.getByRole('combobox', { name: 'Language / 语言' }).click()
   await page.getByRole('option', { name: 'English', exact: true }).click()
@@ -170,4 +174,45 @@ test('first visit follows browser language with English fallback', async ({ brow
       await context.close()
     }
   }
+})
+
+test('recent exports combine fields per batch without merging separate sends', async ({ page, request }, info) => {
+  const model = `recent-${info.project.name}`
+  const now = Date.now()
+  await request.post('/v1/metrics', { data: payload(model, now, 2100, 40) })
+  await page.goto('/')
+  await selectModel(page, model)
+  const timing = page.getByRole('region', { name: '最近计时上报', exact: true })
+  const usage = page.getByRole('region', { name: '最近用量上报', exact: true })
+  await expect(timing.locator('tbody tr')).toHaveCount(1)
+  await expect(timing.locator('td[data-kind="ttft"]')).toContainText('2.10 s')
+  await expect(timing.locator('td[data-kind="tbt"]')).toContainText('25.0 tok/s')
+  await expect(usage.locator('tbody tr')).toHaveCount(1)
+  await expect(usage.locator('td[data-kind="input"]')).toContainText('24K')
+  await expect(usage.locator('td[data-kind="reasoning_output"]')).toContainText('800')
+  await expect(usage.locator('td[data-kind="cache_share"]')).toHaveText('75.0%')
+  const batch = payload(model, now + 1000, 8400, 40)
+  const metrics = batch.resourceMetrics[0].scopeMetrics[0].metrics
+  const ttft = metrics[0]
+  if (!('histogram' in ttft)) throw new Error('Expected histogram')
+  ttft.histogram.dataPoints[0].count = '2'
+  ttft.histogram.dataPoints[0].bucketCounts = ['0', '0', '2', '0']
+  batch.resourceMetrics[0].scopeMetrics[0].metrics = [ttft]
+  await request.post('/v1/metrics', { data: batch })
+  await expect(timing.locator('tbody tr')).toHaveCount(2)
+  await expect(timing.locator('tbody tr').first().locator('[data-kind="ttft"]')).toContainText('4.20 s')
+  await expect(timing.locator('tbody tr').first().locator('[data-kind="ttft"]')).toContainText('2 个有效样本')
+  await expect(timing.locator('tbody tr').first().locator('[data-kind="tbt"]')).toHaveText('—')
+  await expect(usage.locator('tbody tr')).toHaveCount(1)
+  await request.post('/v1/metrics', { data: batch })
+  const snapshot = await request.get(`/api/snapshot?model=${model}&minutes=60`)
+  expect((await snapshot.json()).recent_timings).toHaveLength(2)
+  const tokens = payload(model, now + 2000, 1, 1)
+  tokens.resourceMetrics[0].scopeMetrics[0].metrics = [tokens.resourceMetrics[0].scopeMetrics[0].metrics[2]]
+  await request.post('/v1/metrics', { data: tokens })
+  await expect(usage.locator('tbody tr')).toHaveCount(2)
+  await expect(usage.locator('tbody tr').first().locator('[data-kind="input"]')).toContainText('24K')
+  await expect(usage.locator('tbody tr').first().locator('[data-kind="output"]')).toHaveText('—')
+  await expect(usage.locator('tbody tr').first().locator('[data-kind="cache_share"]')).toHaveText('—')
+  await expect(timing.locator('tbody tr')).toHaveCount(2)
 })

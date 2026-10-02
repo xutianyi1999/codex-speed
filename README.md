@@ -65,6 +65,8 @@ Timings come from the server and exclude client network latency and local tool e
 
 Trend points show time-bucket averages for timings and totals for tokens. Lines connect observations without filling missing values. Select a token legend item to view one series. Additional server timings are available under **Metric details**.
 
+The recent lists show one received export batch per model per row, up to 20 batches in the selected receipt-time window. TTFT is the batch mean, decode is estimated from batch mean TBT, and token values are batch totals. Each metric has its own observation count. A batch can contain multiple requests; missing fields remain unknown.
+
 Failure rates count retries separately. WebSocket send success does not mean generation succeeded; neither failure rate measures task success or captures every subsequent streaming error.
 
 ## Storage and access
