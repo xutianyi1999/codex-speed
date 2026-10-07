@@ -5,7 +5,7 @@ import ReliabilityTrend from "@/components/reliability-trend";
 import TokenTrend from "@/components/token-trend";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
-import { clock, type Snapshot, timeTick } from "@/lib/api";
+import { chartTime, type Snapshot, trendTimeTick } from "@/lib/api";
 export default function Trend({
   data,
   metric,
@@ -53,10 +53,11 @@ export default function Trend({
           dataKey="time_ms"
           type="number"
           domain={["dataMin", "dataMax"]}
-          tickFormatter={timeTick}
+          tickFormatter={trendTimeTick(data.trend)}
           tickLine={false}
           axisLine={false}
           minTickGap={45}
+          interval="preserveStartEnd"
           tickMargin={12}
         />
         <YAxis
@@ -69,7 +70,7 @@ export default function Trend({
         <ChartTooltip
           content={
             <ChartTooltipContent
-              labelFormatter={(_, payload) => clock(payload[0]?.payload.time_ms)}
+              labelFormatter={(_, payload) => chartTime(payload[0]?.payload.time_ms)}
               formatter={(v) => (
                 <span>
                   {Number(v).toFixed(latency ? 2 : 1)} {latency ? "s" : "tok/s"}

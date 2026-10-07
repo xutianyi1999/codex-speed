@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { clock, type Snapshot, timeTick, tokens } from "@/lib/api";
+import { chartTime, type Snapshot, tokens, trendTimeTick } from "@/lib/api";
 
 export default function TokenTrend({ data }: { data: Snapshot }) {
   const { t } = useTranslation();
@@ -53,10 +53,11 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
           dataKey="time_ms"
           type="number"
           domain={["dataMin", "dataMax"]}
-          tickFormatter={timeTick}
+          tickFormatter={trendTimeTick(data.trend)}
           tickLine={false}
           axisLine={false}
           minTickGap={45}
+          interval="preserveStartEnd"
           tickMargin={12}
         />
         <YAxis
@@ -69,7 +70,7 @@ export default function TokenTrend({ data }: { data: Snapshot }) {
         <ChartTooltip
           content={
             <ChartTooltipContent
-              labelFormatter={(_, payload) => clock(payload[0]?.payload.time_ms)}
+              labelFormatter={(_, payload) => chartTime(payload[0]?.payload.time_ms)}
               formatter={(value, name) => (
                 <div className="flex w-full justify-between gap-6">
                   <span>{series[name as keyof typeof series]?.label}</span>

@@ -105,12 +105,32 @@ export function clock(value: number | null | undefined): string {
   return value == null ? "—" : new Date(value).toLocaleTimeString(locale(), { hour12: false });
 }
 
-export function timeTick(value: number): string {
-  return new Date(value).toLocaleTimeString(locale(), {
+export function trendTimeTick(trend: Snapshot["trend"]): (value: number) => string {
+  const start = new Date(trend[0]?.time_ms ?? 0);
+  const end = new Date(trend.at(-1)?.time_ms ?? 0);
+  const crossesDay = start.toDateString() !== end.toDateString();
+  const formatter = new Intl.DateTimeFormat(locale(), {
+    ...(crossesDay ? ({ month: "2-digit", day: "2-digit" } as const) : {}),
+    ...(start.getFullYear() !== end.getFullYear() ? ({ year: "numeric" } as const) : {}),
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
+  return (value) => formatter.format(value);
+}
+
+export function chartTime(value: number | null | undefined): string {
+  return value == null
+    ? "—"
+    : new Date(value).toLocaleString(locale(), {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
 }
 
 export function reportTime(value: number): string {
